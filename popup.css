@@ -1,0 +1,147 @@
+body {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+h2 {
+    margin-top: 0;
+    margin-bottom: 0.2em;
+}
+
+h4 {
+    margin-top: 0;
+    margin-bottom: 1em;
+    font-weight: 500;
+}
+
+.popup {
+    background-color: #ffffff;
+    padding: 18px;
+    border: 1px solid #ccc;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    width: max-content;
+    height: max-content;
+    transition: background-color 1s;
+}
+
+#logo {
+    position: absolute;
+    top: 3%;
+    right: 5%;
+    width: 60px;
+    height: 60px;
+}
+
+#fontStyle {
+    font-size: 1em;
+    width: 17em;
+}
+
+.error_text {
+    color: red;
+}
+
+#message {
+    font-size: 1em;
+    width: 95%;
+    height: 5em;
+}   
+
+#name {
+    font-size: 1em;
+    width: 85%;
+}
+
+#gradeOverlay {
+    background-color: black;
+    padding: 2px 6px;
+    border-radius: 5px;
+    color: white;
+    font-family: cursive;
+    display: inline-block;
+    font-size: 1rem;
+    /* display: none; - Set the display to none initally, set the configuration using data from the chrome storage if available, then set the display to block */
+}
+
+#gradeOverlayLabel {
+    display: inline;
+    margin-right: 7px;
+}
+
+#sample_grade {
+    width: 6em;
+}
+
+#sample_grade_error {
+    display: inline;
+    margin-left: 5px;
+    visibility: hidden;
+}
+
+#saveChangesLabel {
+    position: absolute;
+    margin-left: 7px;
+    visibility: hidden;
+    width: 15em;
+    display: inline-flex;
+    margin-top: 0;
+    margin-bottom: 0;
+    transform: translateY(-5.5px);
+    font-size: .925em;
+}
+
+#sendMessage {
+    margin-top: 5px;
+}
+
+#sendMessageLabel {
+    visibility: hidden;
+    margin-left: 5px;
+    display: inline;
+    font-size: .875em;
+}
+
+.spacer {
+    margin-top: 7px;
+}
+
+input[type="checkbox"] {
+    transform: translateY(1.25px);
+}
+
+input[type="color"] {
+    width: 2em;
+    transform: translateY(5px);
+    margin-right: 10px;
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+a, a:visited, a:hover, a:active {
+    color: #1c81bc;
+}
+
+a {
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+#links {
+    margin-top: 6px;
+    height: 6px;
+    font-size: 83%;
+}
+
+#links :first-child {
+    float: left;
+}
+
+#links :last-child {
+    float: right;
+}

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="popup.css" type="text/css">
+<title>Popup with Form Elements</title>
+</head>
+<body>
+    <div class="popup">
+        <h2>CanvasGradesPro</h2>
+        <div class="spacer"></div>
+        <h4>Grade Overlay Config</h4>
+
+        <img id="logo" src="logo.png">
+        
+        <label for="fontStyle">Font Style:</label>
+        <select id="fontStyle">
+            <option value="Abadi MT Condensed Light">Abadi MT Condensed Light</option>
+            <option value="Albertus Extra Bold">Albertus Extra Bold</option>
+            <option value="Albertus Medium">Albertus Medium</option>
+            <option value="Allegro">Allegro</option>
+            <option value="Amazone BT">Amazone BT</option>
+            <option value="AmerType Md BT">AmerType Md BT</option>
+            <option value="Antique Olive">Antique Olive</option>
+            <option value="Arial">Arial</option>
+            <option value="Arial Black">Arial Black</option>
+            <option value="Arial MT">Arial MT</option>
+            <option value="Arial Narrow">Arial Narrow</option>
+            <option value="Arial Rounded MT">Arial Rounded MT</option>
+            <option value="Arrus BT">Arrus BT</option>
+            <option value="Aurora Cn BT">Aurora Cn BT</option>
+            <option value="AvantGarde Bk BT">AvantGarde Bk BT</option>
+            <option value="AvantGarde Md BT">AvantGarde Md BT</option>
+            <option value="BankGothic Md BT">BankGothic Md BT</option>
+            <option value="Bazooka">Bazooka</option>
+            <option value="Benguiat Bk BT">Benguiat Bk BT</option>
+            <option value="BernhardFashion BT">BernhardFashion BT</option>
+            <option value="BernhardMod BT">BernhardMod BT</option>
+            <option value="BinnerD">BinnerD</option>
+            <option value="Book Antiqua">Book Antiqua</option>
+            <option value="Bookman Old Style">Bookman Old Style</option>
+            <option value="Boulder">Boulder</option>
+            <option value="Bremen Bd BT">Bremen Bd BT</option>
+            <option value="Brush Script MT">Brush Script MT</option>
+            <option value="Calibri">Calibri</option>
+            <option value="Calisto MT">Calisto MT</option>
+            <option value="Calligrapher">Calligrapher</option>
+            <option value="Cambria">Cambria</option>
+            <option value="Candara">Candara</option>
+            <option value="CaslonOpnface BT">CaslonOpnface BT</option>
+            <option value="Century Gothic">Century Gothic</option>
+            <option value="Century Schoolbook">Century Schoolbook</option>
+            <option value="Cezanne">Cezanne</option>
+            <option value="CG Omega">CG Omega</option>
+            <option value="CG Times">CG Times</option>
+            <option value="Charlesworth">Charlesworth</option>
+            <option value="Charter Bd BT">Charter Bd BT</option>
+            <option value="Charter BT">Charter BT</option>
+            <option value="Chaucer">Chaucer</option>
+            <option value="ChelthmITC Bk BT">ChelthmITC Bk BT</option>
+            <option value="Clarendon Condensed">Clarendon Condensed</option>
+            <option value="CloisterBlack BT">CloisterBlack BT</option>
+            <option value="Comic Sans MS">Comic Sans MS</option>
+            <option value="Constantia">Constantia</option>
+            <option value="Copperplate Gothic Bold">Copperplate Gothic Bold</option>
+            <option value="Copperplate Gothic Light">Copperplate Gothic Light</option>
+            <option value="CopperplGoth Bd BT">CopperplGoth Bd BT</option>
+            <option value="Corbel">Corbel</option>
+            <option value="Cornerstone">Cornerstone</option>
+            <option value="Coronet">Coronet</option>
+            <option value="Courier">Courier</option>
+            <option value="Courier New">Courier New</option>
+            <option value="Cuckoo">Cuckoo</option>
+            <option value="Cursive" selected>Cursive</option>
+            <option value="Dauphin">Dauphin</option>
+            <option value="Denmark">Denmark</option>
+            <option value="English 111 Vivace BT">English 111 Vivace BT</option>
+            <option value="EngraversGothic BT">EngraversGothic BT</option>
+            <option value="Exotc350 Bd BT">Exotc350 Bd BT</option>
+            <option value="Franklin Gothic Medium">Franklin Gothic Medium</option>
+            <option value="Fransiscan">Fransiscan</option>
+            <option value="Freefrm721 Blk BT">Freefrm721 Blk BT</option>
+            <option value="FrnkGothITC Bk BT">FrnkGothITC Bk BT</option>
+            <option value="Futura Bk BT">Futura Bk BT</option>
+            <option value="Futura Lt BT">Futura Lt BT</option>
+            <option value="Futura Md BT">Futura Md BT</option>
+            <option value="Futura ZBlk BT">Futura ZBlk BT</option>
+            <option value="FuturaBlack BT">FuturaBlack BT</option>
+            <option value="Galliard BT">Galliard BT</option>
+            <option value="Garamond">Garamond</option>
+            <option value="Geneva">Geneva</option>
+            <option value="Geometr231 BT">Geometr231 BT</option>
+            <option value="Geometr231 Hv BT">Geometr231 Hv BT</option>
+            <option value="Geometr231 Lt BT">Geometr231 Lt BT</option>
+            <option value="Georgia">Georgia</option>
+            <option value="GeoSlab 703 Lt BT">GeoSlab 703 Lt BT</option>
+            <option value="GeoSlab 703 XBd BT">GeoSlab 703 XBd BT</option>
+            <option value="GoudyHandtooled BT">GoudyHandtooled BT</option>
+            <option value="GoudyOLSt BT">GoudyOLSt BT</option>
+            <option value="Haettenschweiler">Haettenschweiler</option>
+            <option value="Heather">Heather</option>
+            <option value="Helvetica">Helvetica</option>
+            <option value="Herald">Herald</option>
+            <option value="Humanst 521 Cn BT">Humanst 521 Cn BT</option>
+            <option value="Humanst521 BT">Humanst521 BT</option>
+            <option value="Humanst521 Lt BT">Humanst521 Lt BT</option>
+            <option value="Impact">Impact</option>
+            <option value="Incised901 Bd BT">Incised901 Bd BT</option>
+            <option value="Incised901 BT">Incised901 BT</option>
+            <option value="Incised901 Lt BT">Incised901 Lt BT</option>
+            <option value="Informal011 BT">Informal011 BT</option>
+            <option value="Jester">Jester</option>
+            <option value="Kabel Bk BT">Kabel Bk BT</option>
+            <option value="Kabel Ult BT">Kabel Ult BT</option>
+            <option value="Kaufmann Bd BT">Kaufmann Bd BT</option>
+            <option value="Kaufmann BT">Kaufmann BT</option>
+            <option value="Korinna BT">Korinna BT</option>
+            <option value="Letter Gothic">Letter Gothic</option>
+            <option value="Lithograph">Lithograph</option>
+            <option value="Lithograph Light">Lithograph Light</option>
+            <option value="Long Island">Long Island</option>
+            <option value="Lucida Bright">Lucida Bright</option>
+            <option value="Lucida Console">Lucida Console</option>
+            <option value="Lucida Handwriting">Lucida Handwriting</option>
+            <option value="Lucida Sans">Lucida Sans</option>
+            <option value="Lucida Sans Unicode">Lucida Sans Unicode</option>
+            <option value="Lydian BT">Lydian BT</option>
+            <option value="Marigold">Marigold</option>
+            <option value="Market">Market</option>
+            <option value="Matisse ITC">Matisse ITC</option>
+            <option value="Monotype Corsiva">Monotype Corsiva</option>
+            <option value="MS LineDraw">MS LineDraw</option>
+            <option value="News GothicMT">News GothicMT</option>
+            <option value="NewsGoth BT">NewsGoth BT</option>
+            <option value="OCR A Extended">OCR A Extended</option>
+            <option value="Old Century">Old Century</option>
+            <option value="Onyx BT">Onyx BT</option>
+            <option value="OzHandicraft BT">OzHandicraft BT</option>
+            <option value="Palatino Linotype">Palatino Linotype</option>
+            <option value="Pegasus">Pegasus</option>
+            <option value="Pickwick">Pickwick</option>
+            <option value="Poster">Poster</option>
+            <option value="PosterBodoni BT">PosterBodoni BT</option>
+            <option value="PTBarnum BT">PTBarnum BT</option>
+            <option value="Pythagoras">Pythagoras</option>
+            <option value="Ribbon131 Bd BT">Ribbon131 Bd BT</option>
+            <option value="Rockwell">Rockwell</option>
+            <option value="Sceptre">Sceptre</option>
+            <option value="Segoe UI">Segoe UI</option>
+            <option value="Serifa BT">Serifa BT</option>
+            <option value="Serifa Th BT">Serifa Th BT</option>
+            <option value="ShelleyVolante BT">ShelleyVolante BT</option>
+            <option value="Sherwood">Sherwood</option>
+            <option value="Signboard">Signboard</option>
+            <option value="Socket">Socket</option>
+            <option value="Souvenir Lt BT">Souvenir Lt BT</option>
+            <option value="Staccato222 BT">Staccato222 BT</option>
+            <option value="Steamer">Steamer</option>
+            <option value="Storybook">Storybook</option>
+            <option value="Subway">Subway</option>
+            <option value="Swis721 BlkEx BT">Swis721 BlkEx BT</option>
+            <option value="Swiss911 XCm BT">Swiss911 XCm BT</option>
+            <option value="Tahoma">Tahoma</option>
+            <option value="Technical">Technical</option>
+            <option value="Teletype">Teletype</option>
+            <option value="Tempus Sans ITC">Tempus Sans ITC</option>
+            <option value="Times">Times</option>
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Times New Roman PS">Times New Roman PS</option>
+            <option value="Trebuchet MS">Trebuchet MS</option>
+            <option value="Tristan">Tristan</option>
+            <option value="Tubular">Tubular</option>
+            <option value="TypoUpright BT">TypoUpright BT</option>
+            <option value="Unicorn">Unicorn</option>
+            <option value="Univers">Univers</option>
+            <option value="Univers Condensed">Univers Condensed</option>
+            <option value="Vagabond">Vagabond</option>
+            <option value="Verdana">Verdana</option>
+            <option value="Westminster">Westminster</option>
+            <option value="ZapfEllipt BT">ZapfEllipt BT</option>
+            <option value="ZapfHumnst BT">ZapfHumnst BT</option>
+            <option value="ZapfHumnst Dm BT">ZapfHumnst Dm BT</option>
+            <option value="Zurich BlkEx BT">Zurich BlkEx BT</option>
+            <option value="Zurich Ex BT">Zurich Ex BT</option>
+        </select>
+
+        <div class="spacer"></div>
+        
+        <label for="sample_grade">Sample Grade:</label>
+        <input type="text" id="sample_grade" value="93.25" placeholder="0-100" maxlength="5" spellcheck="false" autocapitalize="false">
+        <p id="sample_grade_error" class="error_text">Bad grade input</p>
+
+        <div></div>
+
+        <label for="text_color">Text Color:</label>
+        <input type="color" id="text_color" value="#ffffff">
+        
+        <label for="background_color">Background Color:</label>
+        <input type="color" id="background_color" value="#000000">
+        
+        <div class="spacer"></div>
+
+        <input type="checkbox" id="dashboard_letter_grade" checked>
+        <label for="dashboard_letter_grade">Show letter grade on dashboard</label>
+
+        <div class="spacer"></div>
+        
+        <p id="gradeOverlayLabel">Grade Overlay Preview:</p><a id="gradeOverlay">&nbsp;</a>
+    
+        <div>&nbsp;</div>
+
+        <h4>Course Page Config</h4>
+        <input type="checkbox" id="show_class_statistics" checked>
+        <label for="show_class_statistics">Show class statistics</label><br>
+        <input type="checkbox" id="show_drops" checked>
+        <label for="show_drops">Show assignment drops table</label><br>
+        <input type="checkbox" id="show_grading_standard" checked>
+        <label for="show_grading_standard">Show grading grandard</label><br><br>
+        
+        <button id="saveChanges" type="submit">Save Changes</button><p id="saveChangesLabel"></p>
+
+        <!-- Contact Form using Discord Webhook -->
+        <form>
+            <h3>Contact Me</h3>
+            <label for="name">Name:</label><br>
+            <input type="text" id="name" placeholder="Enter your name here"><br>
+            <label for="message">Message:</label><br>
+            <textarea id="message" placeholder="Enter your message here" maxlength="1024"></textarea><br>
+            <button id="sendMessage" type="button">Send Message</button><p id="sendMessageLabel"></p>
+        </form>
+        <div id="links">
+            <a>Report an Issue or Send Feedback</a>
+            <a>Vote for New Features</a>
+        </div>
+    </div>
+    <script src="scripts/popup.js" defer></script>
+</body>
+</html>

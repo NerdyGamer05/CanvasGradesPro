@@ -1,0 +1,4 @@
+config*
+*.txt
+.vscode/
+old.js
