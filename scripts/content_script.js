@@ -1643,7 +1643,7 @@ const getLetterGrade = async function(gradingStandard, grade) {
 const retrieveGradingStandard = async function(courseID, gradingStandardID) {
   const grading_standard = (await (await fetch(`/api/v1/courses/${courseID}/grading_standards/${gradingStandardID}`)).json()).grading_scheme;
   const grading_standard_map = {};
-  for (const {name,value} of grading_standard_map) {
+  for (const {name,value} of grading_standard) {
     grading_standard_map[value] = name;
   }
   return grading_standard_map;
