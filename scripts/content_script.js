@@ -29,25 +29,22 @@ const default_grading_standard = {
 
 // Dashboard page
 if (document.title === 'Dashboard') {
-  // TODO Replace this with a fetch request to retrieve all active dashboard cards [api/v1/dashboard/dashboard_cards]
-  const courses = [];
-  fetch('/api/v1/courses?enrollment_state=active&per_page=100&include[]=total_scores', {
+  fetch('/api/v1/dashboard/dashboard_cards', {
     method: 'GET'
   })
   .then(response => response.json())
-  .then(data => {
-    // Find the max course 
-    let term_id = data[0].enrollment_term_id;
-    for (const course of data) {
-      term_id = Math.max(course.enrollment_term_id, term_id);
-    }
-    // Store all courses with the current term id
-    for (const course of data) {
-      if (course.enrollment_term_id === term_id) {
-        courses.push(course);
+  .then(cards => {
+    return Promise.all(cards.map(async card => {
+      const course = await (await fetch(`api/v1/courses/${card.id}`, {
+        method: 'GET'
+      })).json();
+      return {
+        id: card.id,
+        course_code: card.courseCode,
+        apply_assignment_group_weights: course.apply_assignment_group_weights,
+        grading_standard_id: course.grading_standard_id
       }
-    }
-    return courses;
+    }));
   })
   .catch(() => {
     // Probably not on a Canvas page, so stop the execution of this code
@@ -1369,6 +1366,8 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
   try {
     // Store assignments and other data for each category
     const map = {}; 
+    // Store mapping from group id to group name
+    const groupMap = {};
     if (config.use_weighting === undefined) {
       // The course will use weighting if the course provides weighting or if the config has weighting
       config.use_weighting = course.apply_assignment_group_weights || !isObjectEmpty(config.weights);
@@ -1381,6 +1380,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       let groupTotal = 0;
       let statsGroupTotal = 0;
       map[group.name] = {};
+      groupMap[group.id] = group.name;
       map[group.name].q1 = {};
       map[group.name].q1.score = 0;
       map[group.name].q1.grades = new Array();
@@ -1523,7 +1523,8 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
     // Update group total rows at the bottom of the table
     const groupTotals = document.querySelectorAll('.group_total');
     for (const row of groupTotals) {
-      const groupName = row.firstElementChild.textContent.trim();
+      const groupID = RegExp(/\d+/).exec(row.id)[0];
+      const groupName = groupMap[groupID];
       const groupScore = map[groupName].score.toFixed(2);
       const groupTotal = map[groupName].total.toFixed(2);
       const groupPercentage = Math.round(1e4 * map[groupName].decimal) / 1e2;

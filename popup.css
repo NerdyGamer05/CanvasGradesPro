@@ -78,6 +78,13 @@ h4 {
     visibility: hidden;
 }
 
+#saveChanges, #sendMessage {
+    background-color: #1c81bc;
+    color: white;
+    border-radius: 8px;
+    padding: 2px 8px;
+}
+
 #saveChangesLabel {
     position: absolute;
     margin-left: 7px;
@@ -91,6 +98,7 @@ h4 {
 }
 
 #sendMessage {
+    background-color: #119061;
     margin-top: 5px;
 }
 
@@ -132,6 +140,10 @@ a:hover {
     cursor: pointer;
 }
 
+button:hover {
+    cursor: pointer;
+}
+
 #links {
     margin-top: 6px;
     height: 6px;
@@ -140,8 +152,10 @@ a:hover {
 
 #links :first-child {
     float: left;
+    margin-right: 5px;
 }
 
 #links :last-child {
     float: right;
+    margin-left: 5px;
 }
