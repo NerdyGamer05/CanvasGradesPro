@@ -1467,9 +1467,13 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       if (lowDrops === 0 && highDrops === 0) {
         continue;
       }
-      // TODO Make sure that this sorting works for assignment groups that contain assignments with differing totals
-      // Sort the assignments in descending order of number of points lost
-      map[group.name].grades.sort((a,b) => (b.total - b.score) - (a.total - a.score));
+      // TODO Confirm that this sorting approach works properly 
+      // Sort the assignments by simulating the grade after dropping the current assignment (higher grade after drop is placed earlier)
+      map[group.name].grades.sort((a,b) => {
+        const dec_a = (map[group.name].score - a.score) / (map[group.name].total - a.total);
+        const dec_b = (map[group.name].score - b.score) / (map[group.name].total - b.total);
+        return dec_b - dec_a;
+      });
       // Decrease the score and total properties
       // Create a set of the assignments that should not be dropped
       // TODO Store the assignments that are ignored due to dropped if needed in the future
