@@ -51,6 +51,30 @@ if (document.title === 'Dashboard') {
     thisFunctionDoesNotExistAndWasCreatedWithTheOnlyPurposeOfStopJavascriptExecutionOfAllTypesIncludingCatchAndAnyArbitraryWeirdScenario();
   })
   .then(async courses => {
+    // Listen for updating grade overlays when the settings are updated using the popup
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      for (const [key, { newValue: config }] of Object.entries(changes)) {
+        // If the storage update was not for the grade overlay, then ignore it
+        if (key !== 'grade_overlay') {
+          continue;
+        }
+        // Get all of the grade overlays
+        const gradeOverlays = document.getElementById('DashboardCard_Container').querySelectorAll('.grade_overlay');
+        for (const gradeOverlay of gradeOverlays) {
+          // Access grade and letter grade from dataset map (avoid DOM parsing and any unnecessary recalculations)
+          const { grade, letterGrade } = gradeOverlay.dataset;
+          // Update styling for the grade overlays
+          gradeOverlay.style.backgroundColor = config.background_color;
+          gradeOverlay.style.color = config.text_color;
+          gradeOverlay.style.fontFamily = config.font_style;
+          gradeOverlay.textContent = grade === 'NG' ? 'No Grade (NG)' : `${grade}%`;
+          // Show the letter grade on the display if configured
+          if (letterGrade !== null && config.show_letter_grade) {
+            gradeOverlay.textContent += `\u2004(${letterGrade})`; 
+          }
+        }
+      }
+    });
     // Get all config settings from storage
     const config = await chrome.storage.local.get();
     // Store the primary color (used for customizing the popup)
@@ -98,6 +122,8 @@ if (document.title === 'Dashboard') {
         gradeOverlay.style.color = overlayConfig.text_color ?? 'white';
         gradeOverlay.style.fontFamily = overlayConfig.font_style ?? 'cursive';
         gradeOverlay.textContent = grade === 'NG' ? 'No Grade (NG)' : `${grade}%`;
+        gradeOverlay.dataset.grade = grade;
+        gradeOverlay.dataset.letterGrade = letterGrade;
         // Show the letter grade on the display if configured
         if (letterGrade !== null && (overlayConfig.show_letter_grade ?? true)) {
           gradeOverlay.textContent += `\u2004(${letterGrade})`; 
