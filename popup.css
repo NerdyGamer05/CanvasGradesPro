@@ -127,6 +127,12 @@ input[type="color"] {
     padding: 0;
 }
 
+#text_color_firefox, #background_color_firefox {
+    margin-top: 7px;
+    margin-right: 5px;
+    display: none;
+}
+
 a, a:visited, a:hover, a:active {
     color: #1c81bc;
 }

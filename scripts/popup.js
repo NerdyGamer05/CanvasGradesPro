@@ -1,8 +1,9 @@
+const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
 const gradeOverlay = document.getElementById('gradeOverlay');
 const sampleGrade = document.getElementById('sample_grade');
 const sampleGradeError = document.getElementById('sample_grade_error');
-const textColor = document.getElementById('text_color');
-const backgroundColor = document.getElementById('background_color');
+const textColor = document.getElementById(`text_color${isFirefox ? '_firefox' : ''}`);
+const backgroundColor = document.getElementById(`background_color${isFirefox ? '_firefox' : ''}`);
 const overlayShowLetterGrade = document.getElementById('dashboard_letter_grade'); 
 const gradesPageShowClassStats = document.getElementById('show_class_statistics');
 const gradesPageShowDrops = document.getElementById('show_drops');
@@ -65,14 +66,13 @@ contactFormButton.addEventListener('click', () => {
   });
 });
 saveChanges.addEventListener('click', async () => {
-  config.text_color = textColor.value;
-  config.background_color = backgroundColor.value;
+  config.text_color = isFirefox ? textColor.dataset.currentColor :  textColor.value;
+  config.background_color = isFirefox ? backgroundColor.dataset.currentColor : backgroundColor.value;
   config.font_style = fontStyleDropdown.value;
   config.show_letter_grade = overlayShowLetterGrade.checked;
   globalConfig.class_statistics_default_view = gradesPageShowClassStats.checked;
   globalConfig.grading_standard_default_view = gradesPageShowGradingStandard.checked;
   globalConfig.drops_default_view = gradesPageShowDrops.checked;
-  console.log(config, globalConfig);
   try {
     await chrome.storage.local.set(globalConfig)
     await chrome.storage.local.set({ grade_overlay: config });
@@ -83,7 +83,7 @@ saveChanges.addEventListener('click', async () => {
   }
   saveChangesLabel.style.visibility = 'visible';
   saveChangesLabel.style.color = 'black';
-  saveChangesLabel.textContent = "Changes saved successfully!\r\n(refresh for changes to appear)";
+  saveChangesLabel.textContent = "Changes saved successfully!";
 });
 nameInput.addEventListener('input', hideMessageLabel);
 messageInput.addEventListener('input', hideMessageLabel);
@@ -102,13 +102,28 @@ linksContainer.firstElementChild.addEventListener('click', () => chrome.tabs.cre
 linksContainer.lastElementChild.addEventListener('click', () => chrome.tabs.create({ url: 'https://forms.gle/CVf8hfLLBRYCzLhp7' }));
 document.addEventListener('DOMContentLoaded', async () => {
   const obj = await chrome.storage.local.get();
-  console.log(obj);
   const overlayConfig = obj.grade_overlay ?? {};
   // Set popup border color using primary color (same color as Canvas)
   document.body.style.backgroundColor = obj.primary_color ?? '#990000';
-  // Configure the grade overlay settings 
-  textColor.value = overlayConfig.text_color ?? "#ffffff";
-  backgroundColor.value = overlayConfig.background_color ?? "#000000";
+  // Display alternative color inputs if firefox is the current browser (normal color input closes the input for firefox)
+  // Or just configure the default value normally if firefox is not the current browser
+  if (isFirefox) {
+    document.getElementById('text_color').style.display = 'none';
+    document.getElementById('background_color').style.display = 'none';
+    textColor.style.display = 'inline-block';
+    backgroundColor.style.display = 'inline-block';
+    // Load default values & configurations for the color pickers
+    new JSColor(textColor, {
+      value: overlayConfig.text_color || "#ffffff",
+    });
+    new JSColor(backgroundColor, {
+      value: overlayConfig.background_color || "#000000",
+    });
+  } else {
+    textColor.value = overlayConfig.text_color ?? "#ffffff";
+    backgroundColor.value = overlayConfig.background_color ?? "#000000";
+  }
+  // Configure the remaining grade overlay settings 
   fontStyleDropdown.value = overlayConfig.font_style ?? 'Cursive'; // Font style dropdown
   overlayShowLetterGrade.checked = overlayConfig.show_letter_grade ?? true; // Letter grade display checkbox
   // Configure the course page settings (also copy course page config to globalConfig variable)
