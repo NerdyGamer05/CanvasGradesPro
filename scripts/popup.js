@@ -125,12 +125,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     backgroundColor.style.display = 'inline-block';
     // Load default values & configurations for the color pickers
     new JSColor(textColor, {
-      // onInput: "updateGradeOverlay('text_color')",
       position: "top",
       value: overlayConfig.text_color ?? "#ffffff"
     });
     new JSColor(backgroundColor, {
-      // onInput: "updateGradeOverlay('background_color')",
       position: "top",
       value: overlayConfig.background_color ?? "#000000"
     });
