@@ -63,7 +63,6 @@ if (document.title === 'Dashboard') {
         for (const gradeOverlay of gradeOverlays) {
           // Access grade and letter grade from dataset map (avoid DOM parsing and any unnecessary recalculations)
           const { grade, letterGrade } = gradeOverlay.dataset;
-          console.log(gradeOverlay, grade, letterGrade)
           // Update styling for the grade overlays
           gradeOverlay.style.backgroundColor = config.background_color;
           gradeOverlay.style.color = config.text_color;
