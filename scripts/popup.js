@@ -90,8 +90,19 @@ messageInput.addEventListener('input', hideMessageLabel);
 // Add event listeners for configuring the grade overlay preview
 sampleGrade.addEventListener('input', () => updateGradeOverlay('grade'));
 overlayShowLetterGrade.addEventListener('input', () => updateGradeOverlay('letter_grade'));
-textColor.addEventListener('input', () => updateGradeOverlay('text_color'));
-backgroundColor.addEventListener('input', () => updateGradeOverlay('background_color'));
+// Use the correct method for detecting changes in the color input (firefox uses MutationObserver and everything else uses an eventListener)
+if (isFirefox) {
+  const observer = new MutationObserver((mutationList, _observer) => {
+    for (const mutation of mutationList) {
+      updateGradeOverlay(mutation.target.id.replace('_firefox', ''));
+    }
+  });
+  observer.observe(textColor, { attributeFilter: ['data-current-color'] });
+  observer.observe(backgroundColor, { attributeFilter: ['data-current-color'] });
+} else {
+  textColor.addEventListener('input', () => updateGradeOverlay('text_color'));
+  backgroundColor.addEventListener('input', () => updateGradeOverlay('background_color'));
+}
   // TODO Consider adding custom font custom via Google Fonts
 fontStyleDropdown.addEventListener('change', () => updateGradeOverlay('font_style'));
 // Add event listeners for updating the save text when interacting with the class config
@@ -114,10 +125,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     backgroundColor.style.display = 'inline-block';
     // Load default values & configurations for the color pickers
     new JSColor(textColor, {
-      value: overlayConfig.text_color || "#ffffff",
+      // onInput: "updateGradeOverlay('text_color')",
+      position: "top",
+      value: overlayConfig.text_color ?? "#ffffff"
     });
     new JSColor(backgroundColor, {
-      value: overlayConfig.background_color || "#000000",
+      // onInput: "updateGradeOverlay('background_color')",
+      position: "top",
+      value: overlayConfig.background_color ?? "#000000"
     });
   } else {
     textColor.value = overlayConfig.text_color ?? "#ffffff";
@@ -186,17 +201,17 @@ const updateGradeOverlay = function(change) {
     }
     fontStyleDropdown.style.fontFamily = fontStyleDropdown.value;
     gradeOverlay.style.fontFamily = fontStyleDropdown.value;
-    gradeOverlay.style.backgroundColor = backgroundColor.value;
-    gradeOverlay.style.color = textColor.value;
+    gradeOverlay.style.color = isFirefox ? textColor.dataset.currentColor : textColor.value;
+    gradeOverlay.style.backgroundColor = isFirefox ? backgroundColor.dataset.currentColor : backgroundColor.value;
     gradeOverlay.textContent = `${grade}%${overlayShowLetterGrade.checked ? `\u0020(${getLetterGrade(grade)})` : ''}`
   }
   if (change === 'font_style') {
     fontStyleDropdown.style.fontFamily = fontStyleDropdown.value;
     gradeOverlay.style.fontFamily = fontStyleDropdown.value;
   } else if (change === 'text_color') {
-    gradeOverlay.style.color = textColor.value;
+    gradeOverlay.style.color = isFirefox ? textColor.dataset.currentColor : textColor.value;
   } else if (change === 'background_color') {
-    gradeOverlay.style.backgroundColor = backgroundColor.value;
+    gradeOverlay.style.backgroundColor = isFirefox ? backgroundColor.dataset.currentColor : backgroundColor.value;
   } else if (change === 'grade' || change === 'letter_grade') {
     const grade = validateGrade(sampleGrade.value);
     if (grade !== null) {
