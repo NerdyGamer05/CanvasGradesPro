@@ -52,7 +52,7 @@ if (document.title === 'Dashboard') {
   })
   .then(async courses => {
     // Listen for updating grade overlays when the settings are updated using the popup
-    chrome.storage.onChanged.addListener((changes, namespace) => {
+    chrome.storage.onChanged.addListener((changes, _namespace) => {
       for (const [key, { newValue: config }] of Object.entries(changes)) {
         // If the storage update was not for the grade overlay, then ignore it
         if (key !== 'grade_overlay') {
@@ -63,13 +63,14 @@ if (document.title === 'Dashboard') {
         for (const gradeOverlay of gradeOverlays) {
           // Access grade and letter grade from dataset map (avoid DOM parsing and any unnecessary recalculations)
           const { grade, letterGrade } = gradeOverlay.dataset;
+          console.log(gradeOverlay, grade, letterGrade)
           // Update styling for the grade overlays
           gradeOverlay.style.backgroundColor = config.background_color;
           gradeOverlay.style.color = config.text_color;
           gradeOverlay.style.fontFamily = config.font_style;
-          gradeOverlay.textContent = grade === 'NG' ? 'No Grade (NG)' : `${grade}%`;
+          gradeOverlay.textContent = grade === 'NG' ? `No Grade ${config.show_letter_grade ? '(NG)' : ''}` : `${grade}%`;
           // Show the letter grade on the display if configured
-          if (letterGrade !== null && config.show_letter_grade) {
+          if (letterGrade !== 'null' && config.show_letter_grade) {
             gradeOverlay.textContent += `\u2004(${letterGrade})`; 
           }
         }
