@@ -104,7 +104,7 @@ if (document.title === 'Dashboard') {
         const grade = (await getCourseGrade(courses[index], classConfig, null, null))[0];
         // Use the default grading standard if the current class has no grading standard
         if (isObjectEmpty(classConfig.grading_standard)) {
-          classConfig.grading_standard = course.grading_standard_id !== null ? retrieveGradingStandard(course.id, course.grading_standard_id) : config.default_grading_standard ?? default_grading_standard;
+          classConfig.grading_standard = course.grading_standard_id !== null ? (await retrieveGradingStandard(course.id, course.grading_standard_id)) : config.default_grading_standard ?? default_grading_standard;
         }
         // Get the letter grade for the current course
         const letterGrade = await getLetterGrade(classConfig.grading_standard, grade);
@@ -182,7 +182,7 @@ if (document.title === 'Dashboard') {
       method: 'GET'
     })).json();
     if (classGradingStandard === null && course.grading_standard_id !== null) {
-      classGradingStandard = retrieveGradingStandard(course.id, course.grading_stadard_id);
+      classGradingStandard = await retrieveGradingStandard(course.id, course.grading_standard_id);
     }
 
     // If there is no weighting rules in config, then use the class default (if there is one)
@@ -313,7 +313,6 @@ if (document.title === 'Dashboard') {
       }
       return tbody;
     }
-
     // Initialize the grading standards table (viewing mode with the lower limit being stored using a data-* attribute) [<elm>.dataset.lower_bound]
     const gradingStandardTable = document.createElement('table');
     const thead = document.createElement('thead');
@@ -640,7 +639,7 @@ if (document.title === 'Dashboard') {
       }
       const weightInputs = table.querySelectorAll('table.summary:not([id]) tbody input');
       if (weightInputs.length === 0) {
-        console.log('Unexpected behavior. No inputs were found');
+        console.error('Unexpected behavior. No inputs were found');
         return;
       }
       // Perform validation of the inputs and reveal error message if the input is bad
@@ -1633,7 +1632,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       Math.round(100 * statsK * stats.mean) / 100,
     ]);
   } catch (err) {
-    console.log(`An error has occured when calculating the course grade for ${course.course_code}`, err);
+    console.error(`An error has occured when calculating the course grade for ${course.course_code}`, err);
   } 
 }
 
@@ -1675,7 +1674,7 @@ const retrieveGradingStandard = async function(courseID, gradingStandardID) {
   const grading_standard = (await (await fetch(`/api/v1/courses/${courseID}/grading_standards/${gradingStandardID}`)).json()).grading_scheme;
   const grading_standard_map = {};
   for (const {name,value} of grading_standard) {
-    grading_standard_map[value] = name;
+    grading_standard_map[100*value] = name;
   }
   return grading_standard_map;
 }
