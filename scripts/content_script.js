@@ -271,7 +271,7 @@ if (document.title === 'Dashboard') {
         tbody_letter_grade.textContent = lowerBounds[grade];
         tbody_grade.dataset.lower_bound = grade;
         tbody_grade.scope = 'col';
-        tbody_grade.textContent = marker === 0 ? `≥ ${grade}` : (marker === grade_lower_bounds.length - 1 ? `< ${[grade_lower_bounds[marker-1]]}` : `${grade_lower_bounds[marker-1]} < % ≤ ${grade}`);
+        tbody_grade.textContent = marker === 0 ? `≥ ${grade}` : (marker === grade_lower_bounds.length - 1 ? `< ${[grade_lower_bounds[marker-1]]}` : `${grade_lower_bounds[marker-1]} > % ≥ ${grade}`);
         trash_icon.classList.add('fas', 'fa-trash');
         trash_button.href = 'javascript:void(0);';
         trash_button.style.color = 'firebrick';
@@ -892,7 +892,7 @@ if (document.title === 'Dashboard') {
         lowerGradeThresholdCell.replaceChildren();
         // Replace the inputs in the cells with text
         letterGradeCell.textContent = letterGrade;
-        lowerGradeThresholdCell.textContent = marker === 0 ? `≥ ${lowerGradeThreshold}` : ((marker === gradingStandardRows.length - 1 && lowerGradeThreshold === 0) ? `< ${gradingStandardRows[marker-1].children[1].dataset.lower_bound}` : `${gradingStandardRows[marker-1].children[1].dataset.lower_bound} < % ≤ ${lowerGradeThreshold}`);
+        lowerGradeThresholdCell.textContent = marker === 0 ? `≥ ${lowerGradeThreshold}` : ((marker === gradingStandardRows.length - 1 && lowerGradeThreshold === 0) ? `< ${gradingStandardRows[marker-1].children[1].dataset.lower_bound}` : `${gradingStandardRows[marker-1].children[1].dataset.lower_bound} > % ≥ ${lowerGradeThreshold}`);
         trashCell.style.display = 'none';
         addRow.style.display = 'none';
         marker++;
@@ -1238,16 +1238,17 @@ if (document.title === 'Dashboard') {
         grades = await getCourseGrade(course, config, courseAssignments, whatIfScores);
       }
       // gradesArr = [your grade, q1, q2, q3, mean]
-      const gradesArr = await Promise.all(grades.map(async grade => {
+      const gradesArr = await Promise.all(grades.slice(0,5).map(async grade => {
         return {
           grade,
           // Select the best grading standard values (priority is the following: class config -> class grading standard -> global config -> hard-coded default)
           letterGrade: await getLetterGrade(config.grading_standard ?? classGradingStandard ?? globalConfig.default_grading_standard ?? default_grading_standard, grade)
         }
       }));
+      const low = grades[5];
+      const high = grades[6];
       const gradesList = [null,'Lower Quartile','Median','Upper Quartile','Mean'];
-      window.courseGrades = grades; // response: [you, q1, q2, q3, mean] {grades are provided in an array of length 5}
-  
+      window.courseGrades = grades; // response: [you, q1, q2, q3, mean, low, high] {grades are provided in an array of length 7}
       gradesText.forEach(grade => {
         if (grade.id === '') {
           // Right side grade display
@@ -1266,7 +1267,7 @@ if (document.title === 'Dashboard') {
                 break;
               }
               // Get class percentile
-              const percentile = calculatePercentile(gradesArr[1].grade, gradesArr[2].grade, gradesArr[3].grade, gradesArr[0].grade);
+              const percentile = calculatePercentile(gradesArr[1].grade, gradesArr[2].grade, gradesArr[3].grade, gradesArr[0].grade, low, high);
               // Set the top percentile text and style it
               const topPercentile = document.createElement('span');
               topPercentile.textContent = percentile !== null ? `[Top ${Math.round(1e4 - (100 * percentile)) / 100}%]` : '[N/A]';
@@ -1359,17 +1360,38 @@ if (document.title === 'Dashboard') {
   });
 }
 
+// TODO Confirm that this is working properly and that there are no errors / failure cases
 // Calculate the percentile that your grade lies in (this is an approximate value and will not be entirely correct due to the lack of data)
-const calculatePercentile = function(q1, q2, q3, grade) {
+const calculatePercentile = function(q1, q2, q3, grade, low, high) {
   let percentile;
+    // If all of the bounds are equal, then everyone has the same grade (which means that you are in the highest percentile)
+  if (q1 === low && q1 === q2 && q2 === q3 && q3 === high) {
+    return 99.99
+  }
+  // Manually check each of the bounds in decrementing order (to catch cases of the class statistics being equal)
+  if (grade === high) {
+    return 99.99;
+  }
+  if (grade === q3) {
+    return 75;
+  }
+  if (grade === q2) {
+    return 50;
+  }
+  if (grade === q1) {
+    return 25;
+  }
+  if (grade === low) {
+    return 0.01;
+  }
   if (grade <= q1) {
-    percentile = (grade / q1) * 25;
+    percentile = ((grade - low) / (q1 - low)) * 25;
   } else if (grade <= q2) {
     percentile = 25 + ((grade - q1) / (q2 - q1)) * 25;
   } else if (grade <= q3) {
     percentile = 50 + ((grade - q2) / (q3 - q2)) * 25;
   } else {
-    percentile = 75 + ((grade - q3) / (100 - q3)) * 25;
+    percentile = 75 + ((grade - q3) / (high - q3)) * 25;
   }
   // Round the percentile to two decimal places before returning
   // Also bound sthe percentile in the following range: [0.01, 0.99]
@@ -1418,6 +1440,12 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       map[group.name].mean = {};
       map[group.name].mean.score = 0;
       map[group.name].mean.grades = new Array();
+      map[group.name].low = {};
+      map[group.name].low.score = 0;
+      map[group.name].low.grades = new Array();
+      map[group.name].high = {};
+      map[group.name].high.score = 0;
+      map[group.name].high.grades = new Array();
       map[group.name].weight = is_course_unweighted ? 1 : (!isObjectEmpty(config.weights) ? config.weights[group.name] : group.group_weight);
       map[group.name].grades = new Array();
       for (const assignment of group.assignments) {
@@ -1435,35 +1463,40 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
           id: assignment.id,
           score,
           total,
-          decimal: score / total // Used for sorting assignments (for dropping) - Rounded to 4 decimal places
         });
         if (statistics !== undefined) {
           // Add grade to the list of grades for each stat
           map[group.name].q1.grades.push({
             score: statistics.lower_q,
             total,
-            decimal: statistics.lower_q / total
           });
           map[group.name].q2.grades.push({
             score: statistics.median,
             total,
-            decimal: statistics.median / total
           });
           map[group.name].q3.grades.push({
             score: statistics.upper_q,
             total,
-            decimal: statistics.upper_q / total
           });
           map[group.name].mean.grades.push({
             score: statistics.mean,
             total,
-            decimal: statistics.mean / total
+          });
+          map[group.name].low.grades.push({
+            score: statistics.min,
+            total,
+          });
+          map[group.name].high.grades.push({
+            score: statistics.max,
+            total,
           });
           // Contribute to the score total of all of the grades for each stat
           map[group.name].q1.score += statistics.lower_q;
           map[group.name].q2.score += statistics.median;
           map[group.name].q3.score += statistics.upper_q;
           map[group.name].mean.score += statistics.mean;
+          map[group.name].low.score += statistics.min;
+          map[group.name].high.score += statistics.max;
           statsGroupTotal += total;
         }
         groupScore += score;
@@ -1478,10 +1511,14 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       map[group.name].q2.total = statsGroupTotal;
       map[group.name].q3.total = statsGroupTotal;
       map[group.name].mean.total = statsGroupTotal;
+      map[group.name].low.total = statsGroupTotal;
+      map[group.name].high.total = statsGroupTotal;
       map[group.name].q1.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q1.score / statsGroupTotal;
       map[group.name].q2.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q2.score / statsGroupTotal;
       map[group.name].q3.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q3.score / statsGroupTotal;
       map[group.name].mean.decimal = statsGroupTotal === 0 ? 0 : map[group.name].mean.score / statsGroupTotal;
+      map[group.name].low.decimal = statsGroupTotal === 0 ? 0 : map[group.name].low.score / statsGroupTotal;
+      map[group.name].high.decimal = statsGroupTotal === 0 ? 0 : map[group.name].high.score / statsGroupTotal;
     }
     // Remove 'dropped' class from all rows that currently have it (re-apply the 'dropped' class manually)
     document.querySelectorAll('#grades_summary .dropped').forEach(assignment => assignment.classList.remove('dropped'));
@@ -1565,7 +1602,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
     let completeTotal = 0;
     // If the course is unweighted, then compute the grade (and statistics grades too if applicable)
     if (is_course_unweighted) {
-    const stats = { q1: [0,0], q2: [0,0], q3: [0,0], mean: [0,0] };
+    const stats = { q1: [0,0], q2: [0,0], q3: [0,0], mean: [0,0], low: [0,0], high: [0,0] };
       for (const group of groups) {
         // Compute score and total for your grade
         completeScore += map[group.name].score;
@@ -1579,25 +1616,31 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
         stats.q2[0] += map[group.name].q2.score;
         stats.q3[0] += map[group.name].q3.score;
         stats.mean[0] += map[group.name].mean.score;
+        stats.low[0] += map[group.name].low.score;
+        stats.high[0] += map[group.name].high.score;
         stats.q1[1] += map[group.name].q1.total;
         stats.q2[1] += map[group.name].q2.total;
         stats.q3[1] += map[group.name].q3.total;
         stats.mean[1] += map[group.name].mean.total;
+        stats.low[1] += map[group.name].low.total;
+        stats.high[1] += map[group.name].high.total;
       }
       // If there are no grades contributing to the class statistics, then return -1 
       // Grades are all rounded to 2 decimal places 
       return [completeTotal === 0 ? 'NG' : Math.round(10000 * completeScore / completeTotal) / 100]
-      .concat(stats.q1[1] === 0 ? new Array(4).fill(-1) : [
-        Math.round(10000 * stats.q1[0] / stats.q1[1]) / 100,
-        Math.round(10000 * stats.q2[0] / stats.q2[1]) / 100,
-        Math.round(10000 * stats.q3[0] / stats.q3[1]) / 100,
-        Math.round(10000 * stats.mean[0] / stats.mean[1]) / 100
+      .concat(stats.q1[1] === 0 ? new Array(6).fill(-1) : [
+        +((100 * stats.q1[0] / stats.q1[1]).toFixed(2)),
+        +((100 * stats.q2[0] / stats.q2[1]).toFixed(2)),
+        +((100 * stats.q3[0] / stats.q3[1]).toFixed(2)),
+        +((100 * stats.mean[0] / stats.mean[1]).toFixed(2)),
+        +((100 * stats.low[0] / stats.low[1]).toFixed(2)),
+        +((100 * stats.high[0] / stats.high[1]).toFixed(2))
       ]);
     }
     let classScore = 0;
     let weightTotal = 0;
     let statsWeightTotal = 0;
-    const stats = { q1: 0, q2: 0, q3: 0, mean: 0 };
+    const stats = { q1: 0, q2: 0, q3: 0, mean: 0, low: 0, high: 0 };
     for (const group of groups) {
       // If there are no grades available in this group, then don't process this group
       if (map[group.name].total === 0) {
@@ -1618,18 +1661,22 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       stats.q2 += map[group.name].q2.decimal * map[group.name].weight;
       stats.q3 += map[group.name].q3.decimal * map[group.name].weight;
       stats.mean += map[group.name].mean.decimal * map[group.name].weight;
+      stats.low += map[group.name].low.decimal * map[group.name].weight;
+      stats.high += map[group.name].high.decimal * map[group.name].weight;
     }
     // Compute scalars for determining how to scale your grade and the class statistics grades 
     // Solves the issue of having assignment groups with 0 entries being stored as a 0
     const k = weightTotal === 0 ? 0 : 100 / weightTotal;
     const statsK = statsWeightTotal === 0 ? 0 : 100 / statsWeightTotal;
-    // Round to two decimal places 
+    // Grades are all rounded to 2 decimal places 
     return [k === 0 ? 'NG' : Math.round(100 * k * classScore) / 100]
-    .concat(statsK === 0 ? new Array(4).fill(-1) : [
-      Math.round(100 * statsK * stats.q1) / 100,
-      Math.round(100 * statsK * stats.q2) / 100,
-      Math.round(100 * statsK * stats.q3) / 100,
-      Math.round(100 * statsK * stats.mean) / 100,
+    .concat(statsK === 0 ? new Array(6).fill(-1) : [
+      +((statsK * stats.q1).toFixed(2)),
+      +((statsK * stats.q2).toFixed(2)),
+      +((statsK * stats.q3).toFixed(2)),
+      +((statsK * stats.mean).toFixed(2)),
+      +((statsK * stats.low).toFixed(2)),
+      +((statsK * stats.high).toFixed(2))
     ]);
   } catch (err) {
     console.error(`An error has occured when calculating the course grade for ${course.course_code}`, err);
