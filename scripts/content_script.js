@@ -150,7 +150,11 @@ if (document.title === 'Dashboard') {
   if (document.getElementById('not_found_root') !== null) {
     thisFunctionDoesNotExistAndWasCreatedWithTheOnlyPurposeOfStopJavascriptExecutionOfAllTypesIncludingCatchAndAnyArbitraryWeirdScenario();
   }
-  document.getElementById('not_right_side').style.zoom = '83%';
+  // Adjust the zoom of the page to prevent overlapping from the assignments table and the right side of the page
+  const zoomFactor = 83+'%';
+  document.getElementById('assignments').style.zoom = zoomFactor;
+  document.getElementById('right-side-wrapper').style.zoom = zoomFactor;
+  // Extract the course ID from the URL
   const courseID = RegExp(/courses\/(\d+)\/grades/).exec(window.location.href)[1];
   Promise.resolve(chrome.storage.local.get())
   .then(data => {
@@ -164,7 +168,7 @@ if (document.title === 'Dashboard') {
    globalConfig.class_statistics_default_view = data.class_statistics_default_view ?? true;
    globalConfig.default_grading_standard = data.default_grading_standard ?? null;
    // The classGradingStandard is only for storing the class specified standard (if there is one)
-   return [config, globalConfig, !isObjectEmpty(config.grading_standard) ? config.grading_standard : null];
+   return [config, globalConfig, null];
   })
   .then(async ([config, globalConfig, classGradingStandard]) => {
     const tableContainer = document.getElementById('assignments-not-weighted');
@@ -181,7 +185,7 @@ if (document.title === 'Dashboard') {
     const courseAssignments = await (await fetch(`/api/v1/courses/${courseID}/assignment_groups?include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission`, {
       method: 'GET'
     })).json();
-    if (classGradingStandard === null && course.grading_standard_id !== null) {
+    if (course.grading_standard_id !== null) {
       classGradingStandard = await retrieveGradingStandard(course.id, course.grading_standard_id);
     }
 
@@ -383,6 +387,10 @@ if (document.title === 'Dashboard') {
     window.dropsViewMode = globalConfig.drops_default_view;
     window.dropsMode = null; // null, 'set', 'view'
     window.gradeStatisticsViewMode = globalConfig.class_statistics_default_view;
+    // Array for storing the number of points earned and points possible (only relevant for unweighted courses)
+    window.coursePoints = null; // if the course is unweighted, then the format will be the following: [points_earned, points_possible]
+    // Keep track of the previous grade configuration (null / what-if scores dictionary / "DOM")
+    window.previousGradeConfig = null;
 
     // Create elements that are being added to the grades page
     const editTable = document.createElement('a');
@@ -594,7 +602,7 @@ if (document.title === 'Dashboard') {
         window.editing = false;
         config.use_weighting = false;
         await saveConfig(config, courseID);
-        await updateGradeDisplay(null);
+        await updateGradeDisplay(null, window.previousGradeConfig);
         return;
       } else if (resetWeights.checked) {
         // Get the weights for each group
@@ -619,7 +627,7 @@ if (document.title === 'Dashboard') {
         config.weights = groupWeights;
         config.use_weighting = true;
         await saveConfig(config, courseID);
-        await updateGradeDisplay(null);
+        await updateGradeDisplay(null, window.previousGradeConfig);
         return;
       }
       // Check if no weighting mode is toggled
@@ -634,7 +642,7 @@ if (document.title === 'Dashboard') {
         window.editing = false;
         config.use_weighting = false;
         await saveConfig(config, courseID);
-        await updateGradeDisplay(null);
+        await updateGradeDisplay(null, window.previousGradeConfig);
         return;
       }
       const weightInputs = table.querySelectorAll('table.summary:not([id]) tbody input');
@@ -649,8 +657,9 @@ if (document.title === 'Dashboard') {
         const weight = +input.value;
         // Check for non-numerical or negative weights
         if (isNaN(weight) || weight < 0) {
-          weightsErrorMessage.style.dsiplay = 'flex';
+          weightsErrorMessage.style.display = 'flex';
           weightsErrorMessage.textContent = "Please use non-negative numerical values for the weights";
+          return;
         }
         weightSum += weight;
         values[input.parentElement.previousElementSibling.textContent] = weight;
@@ -678,7 +687,7 @@ if (document.title === 'Dashboard') {
       // Save config and update the grade display
       await saveConfig(config, courseID);
       // TODO Consider changing this so that only the weights have to be recalculated (store assignment group calculations in a window variable)
-      await updateGradeDisplay(null);
+      await updateGradeDisplay(null, window.previousGradeConfig);
     });
     weightConfig.addEventListener('click', () => {
       if (window.editing !== true) {
@@ -708,7 +717,9 @@ if (document.title === 'Dashboard') {
       const inputMode = gradingStandardRows[0].firstElementChild.firstElementChild !== null;
       // Reset grading standard checkboxes
       setDefaultGradingStandard.checked = false;
+      setDefaultGradingStandard.disabled = false;
       resetGradingStandard.checked = false;
+      resetGradingStandard.disabled = false;
       // Nothing to do if the table is already using inputs (table cells do not need to be modified)
       if (inputMode) {
         gradingStandardTable.style.display = 'inline-table';
@@ -777,6 +788,7 @@ if (document.title === 'Dashboard') {
       if (resetGradingStandard.checked) {
         gradingStandardTable.querySelector('tbody').remove();
         const fallbackGradingStandard = classGradingStandard ?? globalConfig.default_grading_standard ?? default_grading_standard;
+        console.log(fallbackGradingStandard);
         gradingStandardTable.appendChild(loadGradingStandardTable(fallbackGradingStandard));
         // Perform additional updates before saving
         gradingStandardErrorMessage.textContent = '';
@@ -799,10 +811,12 @@ if (document.title === 'Dashboard') {
       }
       // First check if the data provided by the inputs is valid
       const grading_standard = {}; // key: grade, value: letter grade
-      const gradingStandardRows = document.querySelectorAll('#grading_standard tbody tr');
+      const gradingStandardRows = Array.from(document.querySelectorAll('#grading_standard tbody tr'));
+      const gradingStandardBody = gradingStandardRows[0].parentElement;
       const letterGrades = new Set();
       for (const row of gradingStandardRows) {
-        const letterGrade = row.firstElementChild.firstElementChild.value;
+        const letterGrade = row.firstElementChild.firstElementChild.value.toUpperCase();
+        row.firstElementChild.firstElementChild.value = letterGrade;
         const lowerGradeThreshold = +row.children[1].firstElementChild.value;
         if (letterGrade.trim() === '') {
           gradingStandardErrorMessage.textContent = "Please don't leave the input for the letter grade blank";
@@ -827,10 +841,15 @@ if (document.title === 'Dashboard') {
         grading_standard[lowerGradeThreshold] = letterGrade;
         letterGrades.add(letterGrade);
       }
+      // Sort rows in descending order of grade (rows will be sorted for view mode and edit mode)
+      gradingStandardRows.sort((a,b) => b.children[1].firstElementChild.value - a.children[1].firstElementChild.value);
       // If the input is valid, then configure the cells
+      // Re-append rows (since the elements are already in the DOM, they will be moved to their new location (this will sort the rows in descending order)
+      // Reference: https://developer.mozilla.org/en-US/docs/Web/API/Node/appendChild#sect1
       for (const row of gradingStandardRows) {
         const gradeCell = row.children[1];
         gradeCell.dataset.lower_bound = gradeCell.firstElementChild.value;
+        gradingStandardBody.appendChild(row);
       }
       gradingStandardErrorMessage.textContent = '';
       saveGradingStandard.style.display = 'none';
@@ -856,8 +875,7 @@ if (document.title === 'Dashboard') {
     // Function for toggling the view of the grading standard table
     const toggleGradingStandardTable = function() {
       // Any state of window.gradingStandardMode is acceptable
-      const gradingStandardRows = Array.from(document.querySelectorAll('#grading_standard tbody tr'));
-      const gradingStandardBody = gradingStandardRows[0].parentElement;
+      const gradingStandardRows = document.querySelectorAll('#grading_standard tbody tr');
       // Check if the table was previously in editing mode (check if there is an input element)
       const inputMode = gradingStandardRows[0].firstElementChild.firstElementChild !== null;
       // Nothing to do if the table does not use inputs already  
@@ -869,13 +887,6 @@ if (document.title === 'Dashboard') {
         setGradingStandard.style.display = 'flex';
         saveGradingStandard.style.display = 'none';
         return;
-      }
-      // Sort rows in descending order of grade
-      gradingStandardRows.sort((a,b) => b.children[1].firstElementChild.value - a.children[1].firstElementChild.value);
-      // Re-append rows (since the elements are already in the DOM, they will be moved to their new location (this will sort the rows in descending )
-      // Reference: https://developer.mozilla.org/en-US/docs/Web/API/Node/appendChild#sect1
-      for (const row of gradingStandardRows) {
-        gradingStandardBody.appendChild(row);
       }
       let marker = 0;
       for (const row of gradingStandardRows) {
@@ -1050,7 +1061,7 @@ if (document.title === 'Dashboard') {
       // Modify config before saving the config to storage and updating the grade display
       config.drops = dropRules;
       await saveConfig(config, courseID);
-      await updateGradeDisplay(null);
+      await updateGradeDisplay(null, window.previousGradeConfig);
     });
     const toggleDropsTable = function() {
       const dropsRows = Array.from(document.querySelectorAll('#drops_table tbody tr'));
@@ -1083,7 +1094,7 @@ if (document.title === 'Dashboard') {
       window.dropsViewMode = true;
     }
     viewDrops.addEventListener('click', toggleDropsTable);
-    gradingAssignmentsCheckbox.addEventListener('change', async () => await updateGradeDisplay(null));
+    gradingAssignmentsCheckbox.addEventListener('change', async () => await updateGradeDisplay(null, window.previousGradeConfig));
     showWhatIfScores.addEventListener('click', async () => {
       // Fetch grades using GraphQL API
       const whatIfScores = (await (await (fetch('/api/graphql', {
@@ -1093,10 +1104,11 @@ if (document.title === 'Dashboard') {
           "x-csrf-token": decodeURIComponent((/(^|;) *_csrf_token=([^;]*)/.exec(document.cookie) || '')[2]),
         },
         // GraphQL query
-        body: `{"query":"query whatIfGrades($courseId: ID!, $studentId: [ID!]) {\\n  course(id: $courseId) {\\n    submissionsConnection(studentIds: $studentId) {\\n      nodes {\\n        assignment {\\n          _id\\n       }\\n        score\\n        studentEnteredScore\\n      }\\n    }\\n  }\\n}","variables":{"courseId":${courseID},"studentId":[]},"operationName":"whatIfGrades"}`,
+        body: `{"query":"query whatIfGrades($courseId: ID!) {\\n  course(id: $courseId) {\\n    submissionsConnection(filter: { states:[submitted, unsubmitted, pending_review, graded, ungraded] } ) {\\n      nodes {\\n        assignment {\\n          _id\\n       }\\n        score\\n        studentEnteredScore\\n      }\\n    }\\n  }\\n}","variables":{"courseId":${courseID}}}`,
         method: "POST",
       }))).json()).data.course.submissionsConnection.nodes;
       // Store the What-If grades that are available in a dictionary
+      console.log(whatIfScores);
       const whatIfScoresDict = {};
       for (const scoreObj of whatIfScores) {
         const whatIfScore = scoreObj.studentEnteredScore ?? null;
@@ -1113,6 +1125,7 @@ if (document.title === 'Dashboard') {
       showWhatIfScores.parentElement.style.display = 'none';
       hideWhatIfScores.parentElement.style.display = 'block';
       // Update grades using the what-if grades (if there are any)
+      window.previousGradeConfig = whatIfScoresDict;
       await updateGradeDisplay(null, whatIfScoresDict);
     });
     hideWhatIfScores.addEventListener('click', async () => {
@@ -1121,12 +1134,18 @@ if (document.title === 'Dashboard') {
       hideWhatIfScores.parentElement.style.display = 'none';
       // Update grades using normal grade calculation 
       // TODO Consider storing the original data so that you can easily revert back
+      window.previousGradeConfig = null;
       await updateGradeDisplay(null);
     });
     // Mutation observer for checking if any assignment grades are changed (checking for the removal of a text input that is used to set a what-if grade)
     const observer = new MutationObserver((mutationList, _observer) => {
       for (const mutation of mutationList) {
         if (mutation.removedNodes && mutation.removedNodes.length === 1 && mutation.removedNodes[0].id === 'grade_entry') {
+          const newValue = mutation.removedNodes[0].value.trim();
+          if (newValue === '' || isNaN(+newValue)) {
+            continue;
+          }
+          window.previousGradeConfig = 'DOM';
           updateGradeDisplay(null, 'DOM');
           break;
         }
@@ -1146,7 +1165,7 @@ if (document.title === 'Dashboard') {
       }
       // Throw an error if the row was never found (this shouldn't happen)
       if (elm === null) {
-        throw new Error('Something unexpected happened when attempting to delete a row from the grading standard table');
+        throw new Error("Something unexpected happened when attempting to delete a row from the grading standard table");
       }
       // Delete current row ('element') from the grade standards table
       const rowCount = gradingStandardTable.lastElementChild.childElementCount;
@@ -1188,7 +1207,7 @@ if (document.title === 'Dashboard') {
       }
       // Throw an error if the row or add button was never found (this shouldn't happen)
       if (elm === null || addRowButton === null) {
-        throw new Error('Something unexpected happened when attempting to add a row to the grading standard table');
+        throw new Error("Something unexpected happened when attempting to add a row to the grading standard table");
       }
       const rowCount = gradingStandardTable.lastElementChild.childElementCount;
       // Don't add another row if the number of rows in the table is 18 or more 
@@ -1232,6 +1251,7 @@ if (document.title === 'Dashboard') {
       newRow.lastElementChild.addEventListener('click', e => deleteGradingStandardRow(e.target));
       elm.insertAdjacentElement(specialCase ? 'afterend' : 'beforebegin', newRow);
     }
+    // Do this immediately because drops do not update properly on what-if grades
     const updateGradeDisplay = async function(grades, whatIfScores = null) {
       const gradesText = document.querySelectorAll('.student_assignment.final_grade');
       if (grades === null) {
@@ -1352,11 +1372,492 @@ if (document.title === 'Dashboard') {
           gradeCell.textContent = `${gradesArr[0].grade}% (${gradesArr[0].letterGrade})`;
           // Remove the "grade" class so that Canvas cannot interact with the grade display
           gradeCell.classList.remove('grade');
+          // Update points display
+          if (window.coursePoints !== null) {
+            // const groupScore = (+map[groupName].score.toLocaleString('en-US')).toFixed(2);
+            grade.querySelector('span.possible.points_possible').textContent = `${(+window.coursePoints[0].toLocaleString('en-US')).toFixed(2)} / ${(+window.coursePoints[1].toLocaleString('en-US')).toFixed(2)}`;
+          }
         }
       });
     }
+
+    /* TEST CODE START */
+    
+    const popup = document.createElement('div');
+    const overlay = document.createElement('div');
+    const content = document.createElement('div');
+    const closeButton = document.createElement('span');
+    const popupTitle = document.createElement('h2');
+    const popupSubtitle = document.createElement('h3');
+    const popupContainer = document.createElement('div');
+    const desiredGradeContainer = document.createElement('div');
+    const desiredGradeTitle = document.createElement('h5');
+    const desiredGradeInput = document.createElement('input');
+    const desiredGradeErrorMessage = document.createElement('p');
+    const desiredGradeWarningMessage = document.createElement('p')
+    const minGradeContainer = document.createElement('div');
+    const minGradeTitle = document.createElement('h5');
+    const minGradeScore = document.createElement('span');
+    const minGradeDivider = document.createElement('span');
+    const minGradePercentage = document.createElement('span');
+    const calculateButton = document.createElement('button');
+
+    popup.classList.add('popup-canvas-grades-pro');
+    overlay.classList.add('overlay');
+    content.classList.add('content');
+    closeButton.classList.add('close-btn');
+    closeButton.innerHTML = '&times';
+    popupTitle.textContent = 'What Grade Do I Need?';
+    popupSubtitle.textContent = '\u200b';
+    popupContainer.classList.add('container-canvas-grades-pro');
+    desiredGradeContainer.id = 'desired-grade';
+    desiredGradeTitle.textContent = 'Desired Grade';
+    desiredGradeInput.type = 'text';
+    desiredGradeInput.placeholder = '0-100 OR letter grade';
+    desiredGradeInput.spellcheck = false;
+    desiredGradeInput.autocomplete = false;
+    desiredGradeInput.maxLength = 6;
+    desiredGradeErrorMessage.id = 'popup-error-message';
+    desiredGradeWarningMessage.id = 'popup-warning-message';
+    minGradeContainer.id = 'minimum-grade';
+    minGradeContainer.classList.add('hide-grades');
+    minGradeTitle.textContent = 'Minimum Grade Required';
+    minGradeScore.id = 'minimum-grade-score';
+    minGradeDivider.id = 'minimum-grade-divider';
+    minGradeDivider.innerHTML = '&#8596;';
+    minGradePercentage.id = 'minimum-grade-percentage';
+    calculateButton.id = 'popup-save-changes';
+    calculateButton.textContent = 'Calculate!';
+
+    desiredGradeContainer.appendChild(desiredGradeTitle);
+    desiredGradeContainer.appendChild(desiredGradeInput);
+    desiredGradeContainer.appendChild(desiredGradeErrorMessage);
+    desiredGradeContainer.appendChild(desiredGradeWarningMessage);
+    minGradeContainer.appendChild(minGradeTitle);
+    minGradeContainer.appendChild(minGradeScore);
+    minGradeContainer.appendChild(minGradeDivider);
+    minGradeContainer.appendChild(minGradePercentage);
+    popupContainer.appendChild(desiredGradeContainer);
+    popupContainer.appendChild(minGradeContainer);
+    content.appendChild(closeButton);
+    content.appendChild(popupTitle);
+    content.appendChild(popupSubtitle);
+    content.appendChild(popupContainer);
+    content.appendChild(calculateButton);
+    popup.appendChild(overlay);
+    popup.appendChild(content);
+    document.body.appendChild(popup);
+
+    const togglePopup = async function(event) {
+      // Hide the minimum grade required result
+      minGradeContainer.classList.add('hide-grades');
+      // Clear the input for the minimum grade desired
+      desiredGradeInput.value = '';
+      popupSubtitle.textContent = '\u200b';
+      desiredGradeErrorMessage.style.display = 'none';
+      desiredGradeWarningMessage.style.display = 'none';
+      popup.classList.toggle('active');
+      if (!popup.classList.contains('active')) {
+        window.minGradeAssignment = null;
+        window.minGradeAssignmentName = null;
+        return;
+      }
+      let elm = event.target;
+      while (elm !== null && elm.tagName !== 'TR') {
+        elm = elm.parentElement;
+      }
+      // Save the ID of the assignment that is being used for the "min grade" operation
+      window.minGradeAssignment = +RegExp(/\d+/).exec(elm.id)[0];
+      // Collect and store information about the "min grade" assignment: [assignment_name, assignment_group_id, assignment_point_total]
+      const assignment = (await (await fetch(`/api/v1/courses/${courseID}/assignments/${window.minGradeAssignment}`)).json());
+      window.minGradeAssignmentData = [assignment.name.trim(), assignment.assignment_group_id, assignment.points_possible];
+      window.minGradeAssignmentName = window.minGradeAssignmentData[0];
+      popupSubtitle.textContent = window.minGradeAssignmentName;
+    }
+
+    closeButton.addEventListener('click', togglePopup);
+    window.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        popup.classList.remove('active');
+      } 
+    });
+
+    const updateMinGradeDisplay = function(score, total) {
+      if (total === undefined) {
+        minGradePercentage.style.display = 'none';
+        minGradeDivider.style.display = 'none';
+      } else {
+        minGradePercentage.style.display = '';
+        minGradeDivider.style.display = '';
+      }
+      minGradeContainer.classList.remove('hide-grades');
+      minGradeScore.textContent = total === undefined ? `Impossible! 😭` : `${+(score.toFixed(2))}/${total}`;
+      minGradePercentage.textContent = total === undefined ? '' : (total === 0 ? '0%' : +((100 * score) / total).toFixed(2)+'%');
+    }
+
+    // TODO Complete the missing functionality throughout the function and try to test all of the cases so that there are no bugs (there will probably be some left out but find as many as you can)
+    const calculateMinGrade = async function() {
+      minGradeContainer.classList.add('hide-grades');
+      const gradeInput = document.getElementById('desired-grade').querySelector('input').value.replace(/\s/g, '');
+      // If the desired grade is provided as a percentage, then use that, or else, try to parse the input as a letter grade and convert it to a percentage (if possible)
+      const desiredGrade = +(/^\d+\.?(\d+)?%?$/.test(gradeInput) ? gradeInput.replace(/%/, '') : Object.entries(config.grading_standard ?? classGradingStandard ?? globalConfig.default_grading_standard ?? default_grading_standard).find(([_grade,letterGrade]) => letterGrade === gradeInput)?.[0] ?? undefined);
+      // If the grade input is "bad", then display the error message and do not continue
+      if (isNaN(desiredGrade)) {
+        desiredGradeErrorMessage.textContent = "Invalid percentage / letter grade!"
+        desiredGradeErrorMessage.style.display = 'revert';
+        return;
+      }
+      // If the grade percentage is negative, then inform the user and do not continue
+      if (desiredGrade < 0) {
+        desiredGradeErrorMessage.textContent = "Please use a non-negative grade!";
+        desiredGradeErrorMessage.style.display = 'revert';
+        return;
+      }
+      desiredGradeErrorMessage.style.display = 'none';
+      try {
+        // Store assignments and other data for each category
+        const map = {}; 
+        // Store the group id, score, total, and other necessary information for the "min grade" operation (the assignment ID is stored at window.minGradeAssignment)
+        // TODO Adjust this array so that the score is not stored
+        const minGradeArr = [null,null,null,null,null,null,null]; // [group_id, score, total, drops: null (no drops) OR {low_drops, high_drops}, group_weighting, group_name, set: never_drop]
+        // Check if ungraded/missing assignments are included in the grade calculation process
+        const gradedAssignmentsOnly = document.getElementById('only_consider_graded_assignments')?.checked ?? true;
+        if (config.use_weighting === undefined) {
+          // The course will use weighting if the course provides weighting or if the config has weighting
+          config.use_weighting = course.apply_assignment_group_weights || !isObjectEmpty(config.weights);
+        }
+        // Check if the course is unweighted
+        const is_course_unweighted = !config.use_weighting;
+        // Update the group id and the assignment point total for the "min grade" assignment
+        minGradeArr[0] = window.minGradeAssignmentData[1];
+        minGradeArr[2] = window.minGradeAssignmentData[2];
+        // Calculate grades for each assignment group and store them in the map
+        for (const group of courseAssignments) {
+          let groupScore = 0;
+          let groupTotal = 0;
+          map[group.name] = {};
+          map[group.name].weight = is_course_unweighted ? 1 : (!isObjectEmpty(config.weights) ? config.weights[group.name] : group.group_weight);
+          // If we are on the "min grade" group and if this group has no weighting, then exit early (group has no impact on your grade so a 0 is the minimum) 
+          if (group.id === minGradeArr[0] && map[group.name].weight === 0) {
+            desiredGradeWarningMessage.style.display = 'revert';
+            desiredGradeWarningMessage.textContent = '⚠️ Warning: ⚠️\nAssignment group has 0 weight';
+            window.courseGrades[0] >= desiredGrade ? updateMinGradeDisplay(0, minGradeArr[2]) : updateMinGradeDisplay();
+            return;
+          } else if (group.id === minGradeArr[0]) {
+            desiredGradeWarningMessage.style.display = 'none';
+          }
+          map[group.name].grades = new Array();
+          for (const assignment of group.assignments) {
+            // Do not include assignments that are not counted towards your final grade (also don't include assignments that have not been graded)
+            // Don't consider missing/ungraded assignments if the gradedAssignmentsOnly checkbox is ticked or if there is a what-if score
+            // Assignment is missing if assignment.submission.missing is true; Assignment is ungraded if assignment.submission.score is null or if assignment.submission.workflow_state is not "graded"
+            // Do not skip the current assignment if it is the "min grade" assignment
+            const missingFlag = assignment.submission.missing;
+            const ungradedFlag = assignment.submission.score === null|| assignment.submission.workflow_state !== 'graded';
+            if (window.minGradeAssignment !== assignment.id && (assignment.omit_from_final_grade || (gradedAssignmentsOnly && ((missingFlag || ungradedFlag) && whatIfScores !== 'DOM' && whatIfScores?.[assignment.id] === undefined)))) {
+              continue;
+            }
+            // Check if the current assignment is the current assignment for the "min grade" operation
+            if (window.minGradeAssignment === assignment.id) {
+              console.log('match found');
+              minGradeArr[1] = assignment.submission.score ?? null;
+              minGradeArr[4] = map[group.name].weight;
+              minGradeArr[5] = group.name;
+              continue;
+            }
+            const total = assignment.points_possible;
+            if (total === null) {
+              continue;
+            }
+            const score = window.previousGradeConfig === 'DOM' ? getWhatIfGrade(assignment) : window.previousGradeConfig?.[assignment.id] ?? assignment.submission.score ?? 0;
+            map[group.name].grades.push({
+              id: assignment.id,
+              score,
+              total,
+            });
+            groupScore += score;
+            groupTotal += total;
+          }
+          // Update map with computed values for the current group
+          map[group.name].score = groupScore;
+          map[group.name].total = groupTotal;
+          map[group.name].decimal = groupTotal === 0 ? 0 : groupScore / groupTotal;
+        }
+        // Attempt to perform drops here
+        for (const group of courseAssignments) {
+          const lowDrops = config.drops?.[group.name]?.[0] ?? group.rules.drop_lowest ?? 0;
+          const highDrops = config.drops?.[group.name]?.[1] ?? group.rules.drop_highest ?? 0;
+          // If there are no drops to be done, then no further processing is necessary
+          if (lowDrops === 0 && highDrops === 0) {
+            continue;
+          }
+          // Check if the group for the "min grade" uses drops (only reaches this point if the current group has at least one low / high drop)
+          if (group.id === minGradeArr[0]) {
+            // Set the drops used flag to true and DO NOT perform any processing on this group
+            minGradeArr[3] = [lowDrops, highDrops];
+            // Configure the never drop set
+            minGradeArr[6] = new Set(group.rules.never_drop ?? []);
+            continue;
+          }
+          // Sort the assignments by simulating the grade after dropping the current assignment (higher grade after drop is placed earlier)
+          map[group.name].grades.sort((a,b) => {
+            const dec_a = (map[group.name].score - a.score) / (map[group.name].total - a.total);
+            const dec_b = (map[group.name].score - b.score) / (map[group.name].total - b.total);
+            return dec_b - dec_a;
+          });
+          // Create a set of the assignments that should not be dropped
+          const neverDrop = new Set(group.rules.never_drop ?? []);
+          // Perform the low drops
+          for (let i = 0; i < lowDrops; i++) {
+            if (map[group.name].grades.length === 0) {
+              break;
+            }
+            const assignment = map[group.name].grades[0];
+            // If the current assignment should not be dropped, then move it to a special array then skip the additional processing
+            if (neverDrop.has(assignment.id)) {
+              map[group.name].grades.shift();
+              // Decrement i since the current assignment is not actually being dropped
+              i--;
+              continue;
+            }
+            map[group.name].score -= assignment.score;
+            map[group.name].total -= assignment.total;
+            // Remove elements from grades array
+            map[group.name].grades.shift();
+          }
+          // Perform the high drops
+          for (let i = 0; i < highDrops; i++) {
+            if (map[group.name].grades.length === 0) {
+              break;
+            }
+            const assignment = map[group.name].grades[map[group.name].grades.length-1];
+            // If the current assignment should not be dropped, then move it to a special array then skip the additional processing
+            if (neverDrop.has(assignment.id)) {
+              map[group.name].grades.pop();
+              // Decrement i since the current assignment is not actually being dropped
+              i--;
+              continue;
+            }
+            map[group.name].score -= assignment.score;
+            map[group.name].total -= assignment.total;
+            map[group.name].grades.pop();
+          }
+          // Re-calculate the decimal for the current group after applying drops
+          map[group.name].decimal = map[group.name].total === 0 ? 0 : Math.round((1e4 * map[group.name].score) / map[group.name].total) / 1e4;
+        }
+
+        // Get the minimum grade needed for the current group to obtain the desired group in the current course
+        const getMinGroupGrade = function() {
+          if (is_course_unweighted) {
+            return null;
+          }
+          // Course is weighted
+          let classScore = 0;
+          let weightTotal = 0;
+          for (const group of courseAssignments) {
+            // Add the weight for the current group to the total (and do nothing else) if the current group has the "min grade" 
+            // This case is necessary since the "min grade" is not considered when computing a group's total (map[group.name].total)
+            if (group.id === minGradeArr[0]) {
+              weightTotal += map[group.name].weight;
+              continue;
+            }
+            // If there are no grades available in this group, then don't process this group
+            if (map[group.name].total === 0) {
+              continue;
+            }
+            // Compute the class score while considering weighting
+            classScore += (map[group.name].score * map[group.name].weight / map[group.name].total);
+            // Keep track of the total weight being used for your grade
+            weightTotal += map[group.name].weight;
+          }
+          const k = weightTotal === 0 ? 0 : 100 / weightTotal;
+          // Throw an error if unexpected behavior arises
+          if (k === 0) {
+            throw new Error(`Something unexpected happened when attempting to calculate the minimum grade required on assignment ${window.minGradeAssignment} to get a ${desiredGrade}`);
+          }
+          console.log('weighting', minGradeArr, minGradeArr[4], k);
+          // Scale the weighting for the "min grade" group
+          minGradeArr[4] *= k;
+          // Find the maximum grade (percentage) that you can get without including the "min grade" group
+          const maxGrade = 100 - minGradeArr[4];
+          console.log(maxGrade, minGradeArr[4], k);
+          // Throw an error if unexpected behavior arises
+          if (maxGrade === 100) {
+            throw new Error(`Something unexpected happened when attempting to calculate the minimum grade required on assignment ${window.minGradeAssignment} to get a ${desiredGrade}`, maxGrade);
+          }
+          // Find the minimum group grade required to get your desired grade in the class (cannot be less than 0)
+          return Math.max(desiredGrade - classScore, 0) / (100 - maxGrade);
+        }
+        console.log(minGradeArr);
+
+        // Check if drops were used for the current group, and if so, then perform the correct operation for finding the "min grade"
+        if (minGradeArr[3] != null) {
+          // Sort the min grades array
+          map[minGradeArr[5]].grades.sort((a,b) => {
+            const dec_a = (map[minGradeArr[5]].score - a.score) / (map[minGradeArr[5]].total - a.total);
+            const dec_b = (map[minGradeArr[5]].score - b.score) / (map[minGradeArr[5]].total - b.total);
+            return dec_b - dec_a;
+          });
+          const gradesArr = map[minGradeArr[5]].grades;
+          // Remove all assignments that are "never dropped" from the grades array (makes processing much easier)
+          // Removal of the assignments in being done in place
+          if (minGradeArr[6].size !== 0) {
+            let marker = 0;
+            for (let i = 0; i < gradesArr.length; i++) {
+              const grade = gradesArr[i];
+              if (minGradeArr[6].has(grade.id)) {
+                gradesArr[i] = null;
+              } else {
+                gradesArr[marker++] = gradesArr[i];
+              }
+            }
+            gradesArr.length = marker;
+          }
+          // If the course is unweighted, then calculate the complete score and complete total (without the current group)
+          const nonMinGroupGrade = !is_course_unweighted ? null : (function() {
+            let completeScore = 0;
+            let completeTotal = 0;
+            for (const group of courseAssignments) {
+              if (group.id === minGradeArr[0]) {
+                continue;
+              }
+              completeScore += map[group.name].score;
+              completeTotal += map[group.name].total;
+            }
+            return [completeScore, completeTotal];
+          })();
+          let activeScore = map[minGradeArr[5]].score;
+          let activeTotal = map[minGradeArr[5]].total;
+          //
+          // Check if the current assignment is not a never drop assignment
+          const canMinGradeDrop = !minGradeArr[6].has(window.minGradeAssignment);
+          // minGradeArr[3]: [low_drops, high_drops]
+          // group score: map[minGradeArr[5]].score
+          // group total: map[minGradeArr[5]].total
+          const minGroupGrade = getMinGroupGrade();
+          if (minGradeArr[3][0] + minGradeArr[3][1] >= gradesArr.length + 1) {
+            // All of the assignments are dropped (the never drop assignments will not be in the grades array so just subtract all of the scores & totals)
+            for (const assignment of gradesArr) {
+              activeScore -= assignment.score;
+              activeTotal -= assignment.total;
+            }
+            // The "min grade" does not matter here, since the current assignment is being dropped
+            updateMinGradeDisplay(0, minGradeArr[2]);
+            return;
+          }
+          // Subtract initial low drop score/total points (off by one since the "min grade" will be placed at the beginning of the grades array)
+          for (let i = 0; i < minGradeArr[3][0] - 1; i++) {
+            activeScore -= gradesArr[i].score;
+            activeTotal -= gradesArr[i].total;
+          }
+          // Subtract high drops score/total points
+          for (let i = 0; i < minGradeArr[3][1]; i++) {
+            activeScore -= gradesArr[gradesArr.length-1-i].score;
+            activeTotal -= gradesArr[gradesArr.length-1-i].total;
+          }
+
+          // Note the proper starting and ending boundaries [startIdx, finishIdx)
+          const startIdx = Math.max(0, minGradeArr[3][0] - 1);
+          const finishIdx = gradesArr.length - minGradeArr[3][1];
+
+          // TODO Change this since iterating through the window is not actually necessary (the assignment is either a low drop, non-drop, or a high drop) [only a max of 3 cases for the "min grade"]
+          for (let i = startIdx; i < finishIdx; i++) {
+            // Check if the "min grade" assignment should be considered as a low drop (in terms of the active score and total)
+            // Also check if the "min grade" assignment should be considered as a high drop
+            if ((i === startIdx && minGradeArr[3][0] > 0 && !canMinGradeDrop) || (i === startIdx + 1 && minGradeArr[3][0] > 0 && canMinGradeDrop)) {
+              activeScore -= gradesArr[i-1].score;
+              activeTotal -= gradesArr[i-1].total;
+            } else if (i === finishIdx - 1 && minGradeArr[3][1] > 0 && canMinGradeDrop) {
+              console.log(gradesArr[i+1]);
+              activeScore += gradesArr[i+1].score;
+              activeTotal += gradesArr[i+1].total;
+            }
+            // Set a flag for whether or not the current assignment is being considered as a drop
+            const dropFlag = canMinGradeDrop && ((i === startIdx && minGradeArr[3][0] > 0) || (i === finishIdx - 1 && minGradeArr[3][1] > 0));
+            const maxScore = i === finishIdx - 1 && minGradeArr[3][1] === 0 ? Infinity : (dropFlag ? 0 : (activeScore - (activeTotal - gradesArr[i].total) * (activeScore - gradesArr[i].score) / (activeTotal - gradesArr[i].total)));
+            const maxGrade = i === finishIdx - 1 && minGradeArr[3][1] === 0 ? Infinity : (dropFlag ? 100 * activeScore / activeTotal : (100 * (activeScore + maxScore) / (activeTotal + minGradeArr[2])));
+            // Check if the max score gives you the desired grade (if not then check if the max grade is greater than the desired grade)
+            if (!is_course_unweighted && maxGrade >= 100 * minGroupGrade) {
+              // We can safely use a grade less than or equal to the max grade to get the desired grade
+              const minGrade = maxScore === 0 ? 0 : Math.max(0, (activeTotal + minGradeArr[2]) * minGroupGrade - activeScore);
+              updateMinGradeDisplay(minGrade, minGradeArr[2]);
+              return;
+            } else if (is_course_unweighted && (100 * (maxScore + activeScore + nonMinGroupGrade[0]) / ((dropFlag ? 0 : minGradeArr[2]) + activeTotal + nonMinGroupGrade[1])) >= desiredGrade) {
+              // We can safely use a grade less than or equal to the max grade to get the desired grade
+              // Account for whether or not the "min grade" assignment is being dropped for the first iteration (use the drop flag)
+              const minGrade = Math.max(0, ((dropFlag ? 0 : minGradeArr[2]) + activeTotal + nonMinGroupGrade[1]) * (desiredGrade / 100) - (activeScore + nonMinGroupGrade[0]))
+              updateMinGradeDisplay(minGrade, minGradeArr[2]);
+              return;
+            }
+          }
+          // The "min grade" is a high drop (since a valid grade wasn't caught in the loop, the desired grade cannot be obtained)
+          updateMinGradeDisplay();
+          return;
+        }
+        // Drops were not used for the current group (easy case)
+        // Check if the course is unweighted
+        if (is_course_unweighted) {
+          let completeScore = 0;
+          let completeTotal = 0;
+          for (const group of courseAssignments) {
+            // Compute score and total for your grade
+            completeScore += map[group.name].score;
+            completeTotal += map[group.name].total;
+          }
+          // Solve for the min grade (set the lower bond)
+          const minGrade = Math.max(0, (completeTotal + minGradeArr[2]) * (desiredGrade / 100) - completeScore);
+          updateMinGradeDisplay(minGrade, minGradeArr[2]);
+          return;
+        }
+        const minGroupGrade = getMinGroupGrade();
+        // Solve for the min grade
+        const minGrade = Math.max(0, (map[minGradeArr[5]].total + minGradeArr[2]) * minGroupGrade - map[minGradeArr[5]].score);
+        updateMinGradeDisplay(minGrade, minGradeArr[2]);
+      } catch (err) {
+        console.error(`An error has occured when calculating the course grade for ${course.course_code}`, err);
+      }
+    }
+
+    // TODO modify this so thta these elements are selected with the rows for the mutationobserver (queryselectorall on the rows, and access desired element of the rows in a loop)
+    const detailsCells = document.getElementById('grades_summary').querySelectorAll('tbody tr:not(.hard_coded) td.details');
+    const ungradedAssignment = detailsCells.length !== 0;
+    for (const cell of detailsCells) {
+      const minScoreButton = document.createElement('button');
+      const minScoreIcon = document.createElement('i');
+      minScoreIcon.classList.add('fas', 'fa-calculator');
+      minScoreButton.style.background = 'none';
+      minScoreButton.style.border = 'none';
+      minScoreButton.style.outline = 'none';
+      minScoreButton.style.fontSize = '1.2em';
+      minScoreButton.style.position = 'absolute';
+      minScoreButton.style.transform = 'translate(-530%, 20%)';
+      minScoreButton.appendChild(minScoreIcon);
+      cell.appendChild(minScoreButton);
+      minScoreButton.addEventListener('click', togglePopup);
+    }
+    if (ungradedAssignment) {
+      const detailsHeaderText = document.createElement('p');
+      detailsHeaderText.innerHTML = 'Min Score for Desired Grade';
+      detailsHeaderText.style.fontSize = '.7em';
+      detailsHeaderText.style.fontWeight = 550;
+      detailsHeaderText.style.marginLeft = '2.4em';
+      detailsHeaderText.style.textAlign = 'center';
+      detailsHeaderText.style.width = '7em';
+      detailsHeaderText.style.transform = 'translateX(-90%)';
+      document.getElementById('grades_summary').querySelector('thead .assignment_score').nextElementSibling.appendChild(detailsHeaderText);
+    }
+
+    // Function for calculating the minimum grade required in order to get a certain grade in a course (or inform the user if their goal is impossible)
+    calculateButton.addEventListener('click', calculateMinGrade);
+    desiredGradeInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        calculateMinGrade();
+      }
+    });
+    /* TEST CODE END */
+
     // Set the grade display initially (when the course page loads in)
-    await updateGradeDisplay(null);
+    await updateGradeDisplay(null, window.previousGradeConfig);
   });
 }
 
@@ -1403,6 +1904,8 @@ const calculatePercentile = function(q1, q2, q3, grade, low, high) {
  * if their is no weighting, then the grade is calculated manually
  * whatIfScores: null / Dictionary / "DOM"
  */
+// TODO Add logic for skipping assignment groups that have a weighting of 0 (unnecessary processing)
+// TODO Make a special mode that calculates the class statistics grades (only needs to be done for the initial computation on the course page)
 const getCourseGrade = async function(course, config, groups, whatIfScores = null) {
   // If the assignment groups have not been provided, then fetch them and update the groups variable
   if (groups === null) {
@@ -1411,6 +1914,8 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
     })).json();
   }
   try {
+    // Check if ungraded/missing assignments are included in the grade calculation process
+    const gradedAssignmentsOnly = document.getElementById('only_consider_graded_assignments')?.checked ?? true;
     // Store assignments and other data for each category
     const map = {}; 
     // Store mapping from group id to group name
@@ -1421,7 +1926,8 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
     }
     // Check if the course is unweighted
     const is_course_unweighted = !config.use_weighting;
-    // Calculate statistics and store grades for each assignment group and store them in the map
+    // Calculate statistics and grades for each assignment group and store them in the map
+    console.log(whatIfScores);
     for (const group of groups) {
       let groupScore = 0;
       let groupTotal = 0;
@@ -1449,16 +1955,26 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       map[group.name].weight = is_course_unweighted ? 1 : (!isObjectEmpty(config.weights) ? config.weights[group.name] : group.group_weight);
       map[group.name].grades = new Array();
       for (const assignment of group.assignments) {
-        const gradedAssignmentsOnly = document.getElementById('only_consider_graded_assignments')?.checked ?? true;
         // Do not include assignments that are not counted towards your final grade (also don't include assignments that have not been graded)
-        // Only consider missing assignments (as 0's) if the gradedAssignmentsOnly checkbox is not ticked
-        if (assignment.omit_from_final_grade || !assignment.graded_submissions_exist || (assignment.submission.missing && (gradedAssignmentsOnly || whatIfScores?.[assignment.id] !== undefined))) {
+        // Don't consider missing/ungraded assignments if the gradedAssignmentsOnly checkbox is ticked or if there isn't a what-if score
+        // Assignment is missing if assignment.submission.missing is true; Assignment is ungraded if assignment.submission.score is null or if assignment.submission.workflow_state is not "graded"
+        const missingFlag = assignment.submission.missing;
+        const ungradedFlag = assignment.submission.score === null|| assignment.submission.workflow_state !== 'graded';
+        if (assignment.omit_from_final_grade || (gradedAssignmentsOnly && ((missingFlag || ungradedFlag) && whatIfScores !== 'DOM' && whatIfScores?.[assignment.id] === undefined))) {
           continue;
         }
         const statistics = assignment.score_statistics;
-        // Use What-If score if there is one available
-        const score = whatIfScores === 'DOM' ? getWhatIfGrade(assignment) : whatIfScores?.[assignment.id] ?? assignment.submission.score ?? 0;
         const total = assignment.points_possible;
+        if (total === null) {
+          continue;
+        }
+        // Use What-If score if there is one available
+        // TODO change this so that if the score is null, it is treated as a 0 if the gradedAssignmentsOnly checkbox is not ticked (this means that missing assignments are considered)
+        const score = whatIfScores === 'DOM' ? getWhatIfGrade(assignment) : whatIfScores?.[assignment.id] ?? assignment.submission.score ?? (!gradedAssignmentsOnly ? 0 : null);
+        // Skip this assignment if the score is null
+        if (score === null) {
+          continue;
+        }
         map[group.name].grades.push({
           id: assignment.id,
           score,
@@ -1536,7 +2052,6 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
         const dec_b = (map[group.name].score - b.score) / (map[group.name].total - b.total);
         return dec_b - dec_a;
       });
-      // Decrease the score and total properties
       // Create a set of the assignments that should not be dropped
       // TODO Store the assignments that are ignored due to dropped if needed in the future
       const neverDrop = new Set(group.rules.never_drop ?? []);
@@ -1553,6 +2068,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
           i--;
           continue;
         }
+        // Decrease the score and total properties
         map[group.name].score -= assignment.score;
         map[group.name].total -= assignment.total;
         // Remove elements from grades array
@@ -1591,8 +2107,8 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
     for (const row of groupTotals) {
       const groupID = RegExp(/\d+/).exec(row.id)[0];
       const groupName = groupMap[groupID];
-      const groupScore = map[groupName].score.toFixed(2);
-      const groupTotal = map[groupName].total.toFixed(2);
+      const groupScore = (+map[groupName].score.toLocaleString('en-US')).toFixed(2);
+      const groupTotal = (+map[groupName].total.toLocaleString('en-US')).toFixed(2);
       const groupPercentage = Math.round(1e4 * map[groupName].decimal) / 1e2;
       // Change the text while also removing the child of these elements, thus severing cell from any Canvas-enforced updates
       row.querySelector('span.tooltip').textContent = groupTotal === '0.00' ? 'N/A' : groupPercentage + '%';
@@ -1625,9 +2141,10 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
         stats.low[1] += map[group.name].low.total;
         stats.high[1] += map[group.name].high.total;
       }
+      window.coursePoints = [completeScore, completeTotal];
       // If there are no grades contributing to the class statistics, then return -1 
       // Grades are all rounded to 2 decimal places 
-      return [completeTotal === 0 ? 'NG' : Math.round(10000 * completeScore / completeTotal) / 100]
+      return [completeTotal === 0 ? 'NG' : +((100 * completeScore / completeTotal).toFixed(2))]
       .concat(stats.q1[1] === 0 ? new Array(6).fill(-1) : [
         +((100 * stats.q1[0] / stats.q1[1]).toFixed(2)),
         +((100 * stats.q2[0] / stats.q2[1]).toFixed(2)),
@@ -1647,7 +2164,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
         continue;
       }
       // Compute the class score while considering weighting
-      classScore += map[group.name].decimal * map[group.name].weight;
+      classScore += (map[group.name].score * map[group.name].weight / map[group.name].total);
       // Keep track of the total weight being used for your grade
       weightTotal += map[group.name].weight;
         // If the statsTotal is 0, then don't continue to compute this group
@@ -1657,19 +2174,19 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       // Keep track of the total weight being used for the class statistics
       statsWeightTotal += map[group.name].weight;
       // Compute the grades for class statistics while considering weighting
-      stats.q1 += map[group.name].q1.decimal * map[group.name].weight;
-      stats.q2 += map[group.name].q2.decimal * map[group.name].weight;
-      stats.q3 += map[group.name].q3.decimal * map[group.name].weight;
-      stats.mean += map[group.name].mean.decimal * map[group.name].weight;
-      stats.low += map[group.name].low.decimal * map[group.name].weight;
-      stats.high += map[group.name].high.decimal * map[group.name].weight;
+      stats.q1 += (map[group.name].q1.score * map[group.name].weight / map[group.name].q1.total);
+      stats.q2 += (map[group.name].q2.score * map[group.name].weight / map[group.name].q2.total);
+      stats.q3 += (map[group.name].q3.score * map[group.name].weight / map[group.name].q3.total)
+      stats.mean += (map[group.name].mean.score * map[group.name].weight / map[group.name].mean.total);
+      stats.low += (map[group.name].low.score * map[group.name].weight / map[group.name].low.total);
+      stats.high += (map[group.name].high.score * map[group.name].weight / map[group.name].high.total);
     }
     // Compute scalars for determining how to scale your grade and the class statistics grades 
     // Solves the issue of having assignment groups with 0 entries being stored as a 0
     const k = weightTotal === 0 ? 0 : 100 / weightTotal;
     const statsK = statsWeightTotal === 0 ? 0 : 100 / statsWeightTotal;
     // Grades are all rounded to 2 decimal places 
-    return [k === 0 ? 'NG' : Math.round(100 * k * classScore) / 100]
+    return [k === 0 ? 'NG' : +((k * classScore).toFixed(2))]
     .concat(statsK === 0 ? new Array(6).fill(-1) : [
       +((statsK * stats.q1).toFixed(2)),
       +((statsK * stats.q2).toFixed(2)),
@@ -1686,7 +2203,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
 // Get the What-If using the DOM (check the current assignments score cell for the changed class)
 const getWhatIfGrade = function (assignment) {
   const scoreCell = document.getElementById(`submission_${assignment.id}`).querySelector('span.grade');
-  return scoreCell.classList.contains('changed') ? +scoreCell.firstChild.textContent.replace(/,/g, '') : assignment.submission.score ?? 0
+  return scoreCell.classList.contains('changed') ? +scoreCell.firstChild.textContent.replace(/,/g, '') : assignment.submission.score;
 }
 
 // Return the letter grade for an associated grade, using a course's config to retrieve the grading standard
@@ -1698,8 +2215,7 @@ const getLetterGrade = async function(gradingStandard, grade) {
   if (grade < 0) {
     return 'N/A';
   }
-
-  // Default grading scheme (sorting in descending order)
+  // Default grading scheme (sorted in descending order) [sorting is automatic?]
   const weights = Object.keys(gradingStandard).map(Number);
   // Binary search on the weights
   let left = 0, right = weights.length - 1;

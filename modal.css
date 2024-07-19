@@ -1,0 +1,126 @@
+.popup-canvas-grades-pro .overlay {
+    position: fixed;
+    top: 0px;
+    left: 0px;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,.7);
+    z-index: 100;
+    display: none;
+}
+
+.popup-canvas-grades-pro .content {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%) scale(0);
+    background: #fff;
+    width: 400px;
+    height: 234px;
+    z-index: 101;
+    text-align: center;
+    margin-top: 5px;
+    padding: 5px;
+    box-sizing: border-box;
+    border: 10px solid var(--dt-color-primary, #900);
+    user-select: none;
+    -moz-user-select: none;
+    h2 {
+        font-weight: 700;
+    }
+    h3 {
+        font-size: .7em;
+        margin: -1em auto 0;
+        text-align: center;
+    }
+    h5 {
+        font-weight: 600;
+    }
+}
+
+.container-canvas-grades-pro {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    justify-items: center;
+} 
+
+#popup-error-message {
+    font-size: .75em;
+    color: red;
+    position: absolute;
+    transform: translateY(3px);
+    width: 130px;
+    word-break: normal;
+    display: none;
+}
+
+#popup-warning-message {
+    font-size: .6em;
+    position: absolute;
+    bottom: 2px;
+    right: 12px;
+    word-break: normal;
+    display: none;
+    white-space: pre-line;
+}
+
+#desired-grade input {
+    width: 85%;
+    margin-top: 11px;
+    margin-bottom: 0;
+}
+
+#minimum-grade h5 {
+    transform: translateY(-11.85px);
+    margin-bottom: 10px;
+}
+
+#minimum-grade span {
+    font-size: .925em;
+    font-weight: 500;
+    transform: translateY(-5px);
+}
+
+#minimum-grade.hide-grades span {
+    visibility: hidden;
+}
+
+#minimum-grade-divider {
+    margin: 0 10px;
+    font-weight: 700 !important;
+}
+
+#popup-save-changes {
+    background-color: #1c81bc;
+    color: white;
+    border-radius: 8px;
+    padding: 2px 8px;
+    margin-top: 18px;
+    margin-bottom: 10px;
+}
+
+.popup-canvas-grades-pro .close-btn {
+    cursor: pointer;
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 20px;
+    height: 20px;
+    background: #222;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 22px;
+    text-align: center;
+    border-radius: 50%;
+}
+
+.popup-canvas-grades-pro.active .overlay {
+    display: block;
+}
+
+.popup-canvas-grades-pro.active .content {
+    transition: all 300ms ease-in-out;
+    transform: translate(-50%,-50%) scale(1);
+}

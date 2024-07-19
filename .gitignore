@@ -2,3 +2,4 @@ config*
 *.txt
 .vscode/
 old.js
+*.zip

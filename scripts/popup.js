@@ -103,7 +103,7 @@ if (isFirefox) {
   textColor.addEventListener('input', () => updateGradeOverlay('text_color'));
   backgroundColor.addEventListener('input', () => updateGradeOverlay('background_color'));
 }
-  // TODO Consider adding custom font custom via Google Fonts
+  // TODO Consider adding custom font custom via Google Fonts (tell the user to use the share link and parse this url that is given)
 fontStyleDropdown.addEventListener('change', () => updateGradeOverlay('font_style'));
 // Add event listeners for updating the save text when interacting with the class config
 gradesPageShowGradingStandard.addEventListener('input', clearSaveMessage);

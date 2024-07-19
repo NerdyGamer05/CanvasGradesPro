@@ -11,6 +11,7 @@
   "content_scripts": [
     {
       "js": ["scripts/content_script.js"],
+      "css": ["modal.css"],
       "matches": ["<all_urls>"]
     }
   ],
