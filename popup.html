@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<style id="custom_font_style"></style>
 <link rel="stylesheet" href="popup.css" type="text/css">
+<link rel="stylesheet" href="https://files.ciditools.com/fontawesome-5.15.4/css/all.min.css" type="text/css">
 <title>Popup with Form Elements</title>
 </head>
 <body>
@@ -186,6 +188,32 @@
 
         <div class="spacer"></div>
         
+        <div id="custom_font_container">
+            <label for="custom_font">Custom Font:</label>
+            <div class="tooltip"><i class="far fa-question-circle"></i>
+                <span class="tooltiptext">
+                    The custom font should be the provided using the following format via Google Fonts:
+                    <br><span class="link">https://fonts.google.com/specimen/&lt;<b>font_family</b>&gt;</span><br>
+                    <br>After pasting the url into the text box, click the refresh icon to see the changes.
+                </span>
+            </div>
+            <div class="switch-container">
+                <label class="switch">
+                    <input id="custom_font_checkbox" type="checkbox" checked>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <span style="margin-left:-22px;">Use custom font?</span>
+        </div>
+
+        <input type="text" id="custom_font" spellcheck="false" autocapitalize="false">
+        <button id="set_custom_font">
+            <i class="fas fa-sync-alt"></i>
+        </button>
+        <p id="custom_font_error" class="error_text">Bad font link</p>
+
+        <div class="spacer"></div>
+        
         <label for="sample_grade">Sample Grade:</label>
         <input type="text" id="sample_grade" value="93.25" placeholder="0-100" maxlength="5" spellcheck="false" autocapitalize="false">
         <p id="sample_grade_error" class="error_text">Bad grade input</p>
@@ -203,7 +231,9 @@
         <div class="spacer"></div>
 
         <input type="checkbox" id="dashboard_letter_grade" checked>
-        <label for="dashboard_letter_grade">Show letter grade on dashboard</label>
+        <label for="dashboard_letter_grade">Show letter grade on dashboard</label><br>
+        <input type="checkbox" id="dashboard_grade" checked>
+        <label for="dashboard_grade">Show grade overlay on dashboard</label>
 
         <div class="spacer"></div>
         
@@ -219,7 +249,7 @@
         <input type="checkbox" id="show_grading_standard" checked>
         <label for="show_grading_standard">Show grading standard</label><br><br>
         
-        <button id="saveChanges" type="submit">Save Changes</button><p id="saveChangesLabel"></p>
+        <button id="saveChanges">Save Changes</button><p id="saveChangesLabel"></p>
 
         <!-- Contact Form using Discord Webhook -->
         <form>

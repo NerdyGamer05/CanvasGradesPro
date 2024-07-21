@@ -26,6 +26,42 @@ const default_grading_standard = {
   60: 'D-',
   0: 'F', // everything else is a F
 }
+const applyCustomFont = async function(font) {
+  console.log('in', font);
+  try {
+    // Don't do anything if the input is empty or if the toggle switch is off 
+    if (font.trim() === '') {
+      window.customFont = null;
+      return;
+    }
+    const url = new URL(font);
+    if (url.hostname !== 'fonts.google.com' || !/^\/specimen\/[^\/]+\/?$/.test(url.pathname)) {
+      window.customFont = null;
+      return;
+    }
+    const fontFamily = RegExp(/^\/specimen\/([^\/]+)\/?$/).exec(url.pathname)[1].replace(/\+/g, ' ');
+    const fontURL = new URL(`https://fonts.googleapis.com/css2`);
+    fontURL.searchParams.set('family', fontFamily.replace(/\s/g, '%2b'));
+    fontURL.searchParams.set('display', 'swap');
+    const response = await fetch(decodeURIComponent(decodeURI(fontURL.href).replace(/\+/g, ' ')));
+    // If the response was not ok, this means that the provided font link is invalid (does not lead to a real font)
+    if (!response.ok) {
+      window.customFont = null;
+      return;
+    }
+    const customFontStyle = document.getElementById('custom_font_style') ?? document.createElement('style');
+    if (customFontStyle.id === '') {
+      customFontStyle.id = 'custom_font_style';
+      document.head.appendChild(customFontStyle);
+    }
+    // Set the style block for the custom font
+    customFontStyle.textContent = await response.text();
+    // Save the custom font family
+    window.customFont = fontFamily;
+  } catch (e) {
+    window.customFont = null;
+  }
+}
 
 // Dashboard page
 if (document.title === 'Dashboard') {
@@ -51,22 +87,37 @@ if (document.title === 'Dashboard') {
     thisFunctionDoesNotExistAndWasCreatedWithTheOnlyPurposeOfStopJavascriptExecutionOfAllTypesIncludingCatchAndAnyArbitraryWeirdScenario();
   })
   .then(async courses => {
+    const customFontStyle = document.createElement('style');
     // Listen for updating grade overlays when the settings are updated using the popup
-    chrome.storage.onChanged.addListener((changes, _namespace) => {
-      for (const [key, { newValue: config }] of Object.entries(changes)) {
+    chrome.storage.onChanged.addListener(async (changes, _namespace) => {
+      for await (const [key, { newValue: config }] of Object.entries(changes)) {
         // If the storage update was not for the grade overlay, then ignore it
         if (key !== 'grade_overlay') {
           continue;
         }
         // Get all of the grade overlays
         const gradeOverlays = document.getElementById('DashboardCard_Container').querySelectorAll('.grade_overlay');
+        // Check if the grade overlays are being hidden
+        const hidingOverlays = config.show_overlay === false;
         for (const gradeOverlay of gradeOverlays) {
+          // If we are hiding the grade overlays, then set the display to none before continuing 
+          if (hidingOverlays) {
+            gradeOverlay.style.display = 'none';
+            continue;
+          }
+          console.log(config);
+          // Or else reset the display to the original
+          gradeOverlay.style.display = 'block';
           // Access grade and letter grade from dataset map (avoid DOM parsing and any unnecessary recalculations)
           const { grade, letterGrade } = gradeOverlay.dataset;
           // Update styling for the grade overlays
           gradeOverlay.style.backgroundColor = config.background_color;
           gradeOverlay.style.color = config.text_color;
-          gradeOverlay.style.fontFamily = config.font_style;
+          if (config.use_custom_font) {
+            await applyCustomFont(config.custom_font ?? '');
+            console.log('in onchange', window.customFont);
+          }
+          gradeOverlay.style.fontFamily = config.use_custom_font ? window.customFont ?? config.font_style : config.font_style;
           gradeOverlay.textContent = grade === 'NG' ? `No Grade ${config.show_letter_grade ? '(NG)' : ''}` : `${grade}%`;
           // Show the letter grade on the display if configured
           if (letterGrade !== 'null' && config.show_letter_grade) {
@@ -100,6 +151,7 @@ if (document.title === 'Dashboard') {
         // Get the config for the current class (default to an empty object if the current class has no config)
         const classConfig = config[course.id] ?? {};
         const overlayConfig = config.grade_overlay ?? {};
+        console.log(overlayConfig);
         // Get the grade for the current class (using config and class grading standard if available)
         const grade = (await getCourseGrade(courses[index], classConfig, null, null))[0];
         // Use the default grading standard if the current class has no grading standard
@@ -120,7 +172,11 @@ if (document.title === 'Dashboard') {
         gradeOverlay.style.display = 'none';
         gradeOverlay.style.backgroundColor = overlayConfig.background_color ?? 'black';
         gradeOverlay.style.color = overlayConfig.text_color ?? 'white';
-        gradeOverlay.style.fontFamily = overlayConfig.font_style ?? 'cursive';
+        if (overlayConfig.use_custom_font) {
+          await applyCustomFont(overlayConfig.custom_font ?? '');
+          console.log('newfont', window.customFont);
+        }
+        gradeOverlay.style.fontFamily = overlayConfig.use_custom_font ? window.customFont ?? (overlayConfig.font_style ?? 'cursive') : overlayConfig.font_style ?? 'cursive';
         gradeOverlay.textContent = grade === 'NG' ? 'No Grade (NG)' : `${grade}%`;
         gradeOverlay.dataset.grade = grade;
         gradeOverlay.dataset.letterGrade = letterGrade;
@@ -138,9 +194,14 @@ if (document.title === 'Dashboard') {
     });
     // Wait for all of the grades to be set before continuing
     await Promise.all(gradePromises)
+    return config.grade_overlay?.show_overlay === false;
   })
-  .then(() => {
-    // Grades overlays were all configured, so show them all at once
+  .then(hidingOverlays => {
+    // Do not show the grade overlay if the 
+    if (hidingOverlays) {
+      return;
+    }
+    // Grades overlays were all configured, so show them all at once (they are not being hidden)
     document.querySelectorAll('.grade_overlay').forEach(gradeOverlay => {
       gradeOverlay.style.display = 'block';
     });
@@ -151,7 +212,7 @@ if (document.title === 'Dashboard') {
     thisFunctionDoesNotExistAndWasCreatedWithTheOnlyPurposeOfStopJavascriptExecutionOfAllTypesIncludingCatchAndAnyArbitraryWeirdScenario();
   }
   // Adjust the zoom of the page to prevent overlapping from the assignments table and the right side of the page
-  const zoomFactor = 83+'%';
+  const zoomFactor = '83%';
   document.getElementById('assignments').style.zoom = zoomFactor;
   document.getElementById('right-side-wrapper').style.zoom = zoomFactor;
   // Extract the course ID from the URL
@@ -788,7 +849,6 @@ if (document.title === 'Dashboard') {
       if (resetGradingStandard.checked) {
         gradingStandardTable.querySelector('tbody').remove();
         const fallbackGradingStandard = classGradingStandard ?? globalConfig.default_grading_standard ?? default_grading_standard;
-        console.log(fallbackGradingStandard);
         gradingStandardTable.appendChild(loadGradingStandardTable(fallbackGradingStandard));
         // Perform additional updates before saving
         gradingStandardErrorMessage.textContent = '';
@@ -1108,7 +1168,6 @@ if (document.title === 'Dashboard') {
         method: "POST",
       }))).json()).data.course.submissionsConnection.nodes;
       // Store the What-If grades that are available in a dictionary
-      console.log(whatIfScores);
       const whatIfScoresDict = {};
       for (const scoreObj of whatIfScores) {
         const whatIfScore = scoreObj.studentEnteredScore ?? null;
@@ -1380,8 +1439,6 @@ if (document.title === 'Dashboard') {
         }
       });
     }
-
-    /* TEST CODE START */
     
     const popup = document.createElement('div');
     const overlay = document.createElement('div');
@@ -1496,6 +1553,7 @@ if (document.title === 'Dashboard') {
     }
 
     // TODO Complete the missing functionality throughout the function and try to test all of the cases so that there are no bugs (there will probably be some left out but find as many as you can)
+    // Function for calculating the minimum grade required in order to get a certain grade in a course (or inform the user if their goal is impossible)
     const calculateMinGrade = async function() {
       minGradeContainer.classList.add('hide-grades');
       const gradeInput = document.getElementById('desired-grade').querySelector('input').value.replace(/\s/g, '');
@@ -1559,7 +1617,6 @@ if (document.title === 'Dashboard') {
             }
             // Check if the current assignment is the current assignment for the "min grade" operation
             if (window.minGradeAssignment === assignment.id) {
-              console.log('match found');
               minGradeArr[1] = assignment.submission.score ?? null;
               minGradeArr[4] = map[group.name].weight;
               minGradeArr[5] = group.name;
@@ -1675,12 +1732,10 @@ if (document.title === 'Dashboard') {
           if (k === 0) {
             throw new Error(`Something unexpected happened when attempting to calculate the minimum grade required on assignment ${window.minGradeAssignment} to get a ${desiredGrade}`);
           }
-          console.log('weighting', minGradeArr, minGradeArr[4], k);
           // Scale the weighting for the "min grade" group
           minGradeArr[4] *= k;
           // Find the maximum grade (percentage) that you can get without including the "min grade" group
           const maxGrade = 100 - minGradeArr[4];
-          console.log(maxGrade, minGradeArr[4], k);
           // Throw an error if unexpected behavior arises
           if (maxGrade === 100) {
             throw new Error(`Something unexpected happened when attempting to calculate the minimum grade required on assignment ${window.minGradeAssignment} to get a ${desiredGrade}`, maxGrade);
@@ -1688,8 +1743,6 @@ if (document.title === 'Dashboard') {
           // Find the minimum group grade required to get your desired grade in the class (cannot be less than 0)
           return Math.max(desiredGrade - classScore, 0) / (100 - maxGrade);
         }
-        console.log(minGradeArr);
-
         // Check if drops were used for the current group, and if so, then perform the correct operation for finding the "min grade"
         if (minGradeArr[3] != null) {
           // Sort the min grades array
@@ -1760,7 +1813,7 @@ if (document.title === 'Dashboard') {
           const startIdx = Math.max(0, minGradeArr[3][0] - 1);
           const finishIdx = gradesArr.length - minGradeArr[3][1];
 
-          // TODO Change this since iterating through the window is not actually necessary (the assignment is either a low drop, non-drop, or a high drop) [only a max of 3 cases for the "min grade"]
+          // TODO Change this since iterating through the entire window is not actually necessary (the assignment is either a low drop, a high drop, or normal) [only a max of 3 cases for the "min grade"]
           for (let i = startIdx; i < finishIdx; i++) {
             // Check if the "min grade" assignment should be considered as a low drop (in terms of the active score and total)
             // Also check if the "min grade" assignment should be considered as a high drop
@@ -1768,7 +1821,6 @@ if (document.title === 'Dashboard') {
               activeScore -= gradesArr[i-1].score;
               activeTotal -= gradesArr[i-1].total;
             } else if (i === finishIdx - 1 && minGradeArr[3][1] > 0 && canMinGradeDrop) {
-              console.log(gradesArr[i+1]);
               activeScore += gradesArr[i+1].score;
               activeTotal += gradesArr[i+1].total;
             }
@@ -1818,7 +1870,7 @@ if (document.title === 'Dashboard') {
       }
     }
 
-    // TODO modify this so thta these elements are selected with the rows for the mutationobserver (queryselectorall on the rows, and access desired element of the rows in a loop)
+    // TODO Modify this so that these that buttons are added earlier with the mutation observer
     const detailsCells = document.getElementById('grades_summary').querySelectorAll('tbody tr:not(.hard_coded) td.details');
     const ungradedAssignment = detailsCells.length !== 0;
     for (const cell of detailsCells) {
@@ -1847,14 +1899,12 @@ if (document.title === 'Dashboard') {
       document.getElementById('grades_summary').querySelector('thead .assignment_score').nextElementSibling.appendChild(detailsHeaderText);
     }
 
-    // Function for calculating the minimum grade required in order to get a certain grade in a course (or inform the user if their goal is impossible)
     calculateButton.addEventListener('click', calculateMinGrade);
     desiredGradeInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         calculateMinGrade();
       }
     });
-    /* TEST CODE END */
 
     // Set the grade display initially (when the course page loads in)
     await updateGradeDisplay(null, window.previousGradeConfig);
@@ -1927,7 +1977,6 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
     // Check if the course is unweighted
     const is_course_unweighted = !config.use_weighting;
     // Calculate statistics and grades for each assignment group and store them in the map
-    console.log(whatIfScores);
     for (const group of groups) {
       let groupScore = 0;
       let groupTotal = 0;

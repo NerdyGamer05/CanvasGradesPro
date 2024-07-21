@@ -1,10 +1,16 @@
 const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
 const gradeOverlay = document.getElementById('gradeOverlay');
+const customFont = document.getElementById('custom_font');
+const customFontCheckbox = document.getElementById('custom_font_checkbox');
+const setCustomFont = document.getElementById('set_custom_font');
+const customFontStyle = document.getElementById('custom_font_style');
+const customFontError = document.getElementById('custom_font_error');
 const sampleGrade = document.getElementById('sample_grade');
 const sampleGradeError = document.getElementById('sample_grade_error');
 const textColor = document.getElementById(`text_color${isFirefox ? '_firefox' : ''}`);
 const backgroundColor = document.getElementById(`background_color${isFirefox ? '_firefox' : ''}`);
 const overlayShowLetterGrade = document.getElementById('dashboard_letter_grade'); 
+const showOverlay = document.getElementById('dashboard_grade');
 const gradesPageShowClassStats = document.getElementById('show_class_statistics');
 const gradesPageShowDrops = document.getElementById('show_drops');
 const gradesPageShowGradingStandard = document.getElementById('show_grading_standard');
@@ -24,10 +30,51 @@ const hideMessageLabel = function() {
   sendMessageLabel.style.visibility = 'hidden';
   sendMessageLabel.textContent = '';
 }
-
 const clearSaveMessage = function() {
   saveChangesLabel.style.visibility = 'hidden';
   saveChangesLabel.textContent = '';
+}
+const configureCustomFont = async function() {
+  await validateCustomFont();
+  if (window.customFont === null) {
+    return;
+  }
+  await updateGradeOverlay('custom_font_style');
+}
+const validateCustomFont = async function() {
+  try {
+    // Don't do anything if the input is empty or if the toggle switch is off 
+    if (customFont.value.trim() === '' || !customFontCheckbox.checked) {
+      window.customFont = null;
+      return;
+    }
+    const url = new URL(customFont.value);
+    if (url.hostname !== 'fonts.google.com' || !/^\/specimen\/[^\/]+\/?$/.test(url.pathname)) {
+      customFontError.style.visibility = 'visible';
+      window.customFont = null;
+      return;
+    }
+    const fontFamily = RegExp(/^\/specimen\/([^\/]+)\/?$/).exec(url.pathname)[1].replace(/\+/g, ' ');
+    const fontURL = new URL(`https://fonts.googleapis.com/css2`);
+    fontURL.searchParams.set('family', fontFamily.replace(/\s/g, '%2b'));
+    fontURL.searchParams.set('display', 'swap');
+    const response = await fetch(decodeURIComponent(decodeURI(fontURL.href).replace(/\+/g, ' ')));
+    // If the response was not ok, this means that the provided font link is invalid (does not lead to a real font)
+    if (!response.ok) {
+      window.customFont = null;
+      customFontError.style.visibility = 'visible';
+      return;
+    }
+    // Set the style block for the custom font
+    customFontStyle.textContent = await response.text();
+    // Save the custom font family
+    window.customFont = fontFamily;
+    // Hide the error message
+    customFontError.style.visibility = 'hidden';
+  } catch (e) {
+    customFontError.style.visibility = 'visible';
+    window.customFont = null;
+  }
 }
 
 contactFormButton.addEventListener('click', () => {
@@ -66,10 +113,27 @@ contactFormButton.addEventListener('click', () => {
   });
 });
 saveChanges.addEventListener('click', async () => {
+  if (customFontCheckbox.checked) {
+    await validateCustomFont();
+    // If the custom font is bad, then abandon the save
+    if (window.customFont === null) {
+      saveChangesLabel.style.visibility = 'visible';
+      saveChangesLabel.style.color = 'red';
+      saveChangesLabel.textContent = "Changes failed to save!";
+      return;
+    }
+  }
   config.text_color = isFirefox ? textColor.dataset.currentColor :  textColor.value;
   config.background_color = isFirefox ? backgroundColor.dataset.currentColor : backgroundColor.value;
   config.font_style = fontStyleDropdown.value;
   config.show_letter_grade = overlayShowLetterGrade.checked;
+  config.show_overlay = showOverlay.checked;
+  // Only save custom font if the custom font provided is not null
+  await validateCustomFont();
+  if (window.customFont !== null) {
+    config.custom_font = customFont.value.trim();
+  }
+  config.use_custom_font = customFontCheckbox.checked;
   globalConfig.class_statistics_default_view = gradesPageShowClassStats.checked;
   globalConfig.grading_standard_default_view = gradesPageShowGradingStandard.checked;
   globalConfig.drops_default_view = gradesPageShowDrops.checked;
@@ -88,23 +152,43 @@ saveChanges.addEventListener('click', async () => {
 nameInput.addEventListener('input', hideMessageLabel);
 messageInput.addEventListener('input', hideMessageLabel);
 // Add event listeners for configuring the grade overlay preview
-sampleGrade.addEventListener('input', () => updateGradeOverlay('grade'));
-overlayShowLetterGrade.addEventListener('input', () => updateGradeOverlay('letter_grade'));
+sampleGrade.addEventListener('input', async () => await updateGradeOverlay('grade'));
+overlayShowLetterGrade.addEventListener('input', async () => await updateGradeOverlay('letter_grade'));
 // Use the correct method for detecting changes in the color input (firefox uses MutationObserver and everything else uses an eventListener)
 if (isFirefox) {
-  const observer = new MutationObserver((mutationList, _observer) => {
-    for (const mutation of mutationList) {
-      updateGradeOverlay(mutation.target.id.replace('_firefox', ''));
+  const observer = new MutationObserver(async (mutationList, _observer) => {
+    for await (const mutation of mutationList) {
+      await updateGradeOverlay(mutation.target.id.replace('_firefox', ''));
     }
   });
   observer.observe(textColor, { attributeFilter: ['data-current-color'] });
   observer.observe(backgroundColor, { attributeFilter: ['data-current-color'] });
 } else {
-  textColor.addEventListener('input', () => updateGradeOverlay('text_color'));
-  backgroundColor.addEventListener('input', () => updateGradeOverlay('background_color'));
+  textColor.addEventListener('input', async () => await updateGradeOverlay('text_color'));
+  backgroundColor.addEventListener('input', async () => await updateGradeOverlay('background_color'));
 }
-  // TODO Consider adding custom font custom via Google Fonts (tell the user to use the share link and parse this url that is given)
-fontStyleDropdown.addEventListener('change', () => updateGradeOverlay('font_style'));
+customFontCheckbox.addEventListener('change', async () => {
+  // If the custom font switch is off, then disable the custom font input
+  // Or else, perform the same actions as pressing the (refresh-icon) button for setting the custom font 
+  if (!customFontCheckbox.checked) {
+    customFont.disabled = true;
+    setCustomFont.disabled = true;
+    customFontError.style.visibility = 'hidden';
+    await updateGradeOverlay('font_style');
+  } else {
+    customFont.disabled = false;
+    setCustomFont.disabled = false;
+    await configureCustomFont();
+    customFontError.style.visibility = window.customFont === null ? 'visible' : 'hidden';
+  }
+});
+setCustomFont.addEventListener('click', async () => await configureCustomFont());
+customFont.addEventListener('keydown', async (event) => {
+  if (event.key === 'Enter') {
+    await configureCustomFont();
+  }
+})
+fontStyleDropdown.addEventListener('change', async () => await updateGradeOverlay('font_style'));
 // Add event listeners for updating the save text when interacting with the class config
 gradesPageShowGradingStandard.addEventListener('input', clearSaveMessage);
 gradesPageShowClassStats.addEventListener('input', clearSaveMessage);
@@ -138,7 +222,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   // Configure the remaining grade overlay settings 
   fontStyleDropdown.value = overlayConfig.font_style ?? 'Cursive'; // Font style dropdown
+  customFont.value = overlayConfig.custom_font ?? ''; // Custom font textbox (don't save if font is invalid)
+  customFontCheckbox.checked = overlayConfig.use_custom_font ?? false; // Custom font toggle switch
+  // Disable custom font textbox (and refresh button) if the toggle switch is off
+  customFont.disabled = !customFontCheckbox.checked;
+  setCustomFont.disabled = !customFontCheckbox.checked;
   overlayShowLetterGrade.checked = overlayConfig.show_letter_grade ?? true; // Letter grade display checkbox
+  showOverlay.checked = overlayConfig.show_overlay ?? true; // Overlay display checkbox
   // Configure the course page settings (also copy course page config to globalConfig variable)
   gradesPageShowClassStats.checked = globalConfig.class_statistics_default_view = obj.class_statistics_default_view ?? true;
   gradesPageShowGradingStandard.checked = globalConfig.grading_standard_default_view = obj.grading_standard_default_view ?? true;
@@ -148,7 +238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   for (const fontStyleOption of fontStyleDropdown.children) {
     fontStyleOption.style.fontFamily = fontStyleOption.textContent;
   }
-  updateGradeOverlay(null);
+  await updateGradeOverlay(null);
 });
 
 const default_grading_standard = {
@@ -166,7 +256,6 @@ const default_grading_standard = {
   60: 'D-',
   0: 'F', // everything else is a F
 }
-
 const getLetterGrade = function(grade) {
     if (grade < 0) {
     return 'N/A';
@@ -188,8 +277,7 @@ const getLetterGrade = function(grade) {
   }
   return 'N/A';
 }
-
-const updateGradeOverlay = function(change) {
+const updateGradeOverlay = async function(change) {
   saveChangesLabel.style.visibility = 'hidden';
   // If change is null, then update everything (used for intial configuration)
   if (change === null) {
@@ -197,15 +285,23 @@ const updateGradeOverlay = function(change) {
     if (grade === null) {
       return;
     }
+    if (customFontCheckbox.checked) {
+      await configureCustomFont();
+    }
+    console.log(customFontCheckbox.checked, window.customFont);
     fontStyleDropdown.style.fontFamily = fontStyleDropdown.value;
-    gradeOverlay.style.fontFamily = fontStyleDropdown.value;
+    gradeOverlay.style.fontFamily = window.customFont ?? fontStyleDropdown.value;
     gradeOverlay.style.color = isFirefox ? textColor.dataset.currentColor : textColor.value;
     gradeOverlay.style.backgroundColor = isFirefox ? backgroundColor.dataset.currentColor : backgroundColor.value;
     gradeOverlay.textContent = `${grade}%${overlayShowLetterGrade.checked ? `\u0020(${getLetterGrade(grade)})` : ''}`
   }
-  if (change === 'font_style') {
+  if (change === 'custom_font_style') {
+    gradeOverlay.style.fontFamily = window.customFont;  
+  } else if (change === 'font_style') {
     fontStyleDropdown.style.fontFamily = fontStyleDropdown.value;
-    gradeOverlay.style.fontFamily = fontStyleDropdown.value;
+    if (!customFontCheckbox.checked) {
+      gradeOverlay.style.fontFamily = fontStyleDropdown.value;
+    }
   } else if (change === 'text_color') {
     gradeOverlay.style.color = isFirefox ? textColor.dataset.currentColor : textColor.value;
   } else if (change === 'background_color') {
@@ -217,7 +313,6 @@ const updateGradeOverlay = function(change) {
     }
   }
 }
-
 const validateGrade = function(input) {
   input = input.trim();
   const grade = input !== '' && /^(\d+)?\.?(\d+)?$/.test(input) ? +input : null;
