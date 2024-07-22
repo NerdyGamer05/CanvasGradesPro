@@ -132,6 +132,7 @@ saveChanges.addEventListener('click', async () => {
   await validateCustomFont();
   if (window.customFont !== null) {
     config.custom_font = customFont.value.trim();
+    gradeOverlay.style.fontFamily = window.customFont;
   }
   config.use_custom_font = customFontCheckbox.checked;
   globalConfig.class_statistics_default_view = gradesPageShowClassStats.checked;
