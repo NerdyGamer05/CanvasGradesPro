@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "CanvasGradesPro",
   "description": "Extension for making improvements to Canvas grades",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "action": {
     "default_icon": "logo.png",
     "default_title": "Settings",
@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "js": ["scripts/content_script.js"],
-      "css": ["modal.css"],
+      "css": ["styles.css"],
       "matches": ["<all_urls>"]
     }
   ],

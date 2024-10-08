@@ -10,6 +10,11 @@ const isObjectEmpty = function(obj) {
   return true;
 }
 
+// Function for abstracting the config saving process
+const saveConfig = async function(config, key) {
+  await chrome.storage.local.set({ [key] : config });
+}
+
 // Numbers represent the lower limit for a given letter grade
 const default_grading_standard = {
   97: 'A+',
@@ -25,9 +30,161 @@ const default_grading_standard = {
   63: 'D',
   60: 'D-',
   0: 'F', // everything else is a F
+};
+// Standard for how letter grades are converted to GPA (this standard is for UMD)
+const default_gpa_standard = {
+  'A+': 4.0,
+  'A': 4.0,
+  'A-': 3.7,
+  'B+': 3.3,
+  'B': 3.0,
+  'B-': 2.7,
+  'C+': 2.3,
+  'C': 2.0,
+  'C-': 1.7,
+  'D+': 1.3,
+  'D': 1.0,
+  'D-': 0.7,
+  'F': 0.0
+};
+
+/**
+ * Function for finding the variance of an array of letter grades
+ * Used for finding the most "realistic" min gpa combinations (uses the )
+ */
+const findVariance = function(gpaStandard, grades) {
+  const n = grades.length;
+  let sum = 0;
+  for (const grade of grades) {
+    sum += Number(gpaStandard[grade]);
+  }
+  const averageGrade = sum / n;
+  let varianceSum = 0;
+  for (const grade of grades) {
+    varianceSum += Math.pow((Number(gpaStandard[grade]) - averageGrade), 2);
+  }
+  return varianceSum / n;
+}
+
+/**
+ * TODO Investigate to see if there is a faster way to do this (attempt to avoid duplicate removal at the end)
+ * Function for calculating possible combinations for your desired minimum gp
+ * gpaStandard: Letter grade to gpa points mapping
+ * courseCredits: Array of credits (will be sorted in the function for a standard return format)
+ * gpaRequired: Numeric value representing the gpa required for the current semester
+*/
+const getMinGpaCombinations = function(gpaStandard, courseCredits, gpaRequired) {
+  courseCredits.sort((a,b) => b-a);
+  const sortedGpaStandard = Object.keys(gpaStandard).sort((a,b) => {
+    // If the GPA's associated with the two current letter grades are not equal, then compare them
+    if (gpaStandard[a] !== gpaStandard[b]) {
+      return gpaStandard[b] - gpaStandard[a];
+    }
+    // If they are equal, then compare the letter grade representations (while considering plus and minus signs)
+    return (b + ',').localeCompare(a + ',');
+  });
+  // Modify the keys so that the non-unique keys are "filtered" out (this will be sorted is descending order)
+  const gpaStandardKeys = [];
+  for (let i = 0; i < sortedGpaStandard.length; i++) {
+    // If the next letter grade maps to the same gpa as the current letter grade, then skip the current letter grade
+    const flag = i < sortedGpaStandard.length-1 && gpaStandard[sortedGpaStandard[i]] === gpaStandard[sortedGpaStandard[i+1]];
+    if (flag) {
+      continue;
+    }
+    gpaStandardKeys.push(sortedGpaStandard[i]);
+  }
+  const totalCredits = courseCredits.reduce((a,b) => a + b, 0);
+  const maxGpa = gpaStandard[gpaStandardKeys[0]];
+  // Determine the maximum error that will allowed
+  // This will fail in the following case:
+  // The max gpa cannot be obtained by simply by getting the highest grade in all your courses (e.g. honors and AP courses)
+  const maxError = totalCredits * (maxGpa - gpaRequired); 
+  // Keep track of the maximum error difference allowed
+  let maxErrorDiff = 1;
+  let queue = null;
+  while (true) {
+    // Don't add something to the queue if it will fail when processed (do some preprocessing to minimize memory usage and improve performance)
+    // Max queue size may be m^n, where "m" is the number of letter grades and "n" is the number of courses that you are taking
+    queue = [[0,{}]]; // format: [ current_error, {credits : [letter_grades] } ]
+    for (let j = 0; j < courseCredits.length; j++) {
+      const credits = courseCredits[j];
+      // Only process the elements in the queue that were here at the beginning of this iteration
+      const n = queue.length;
+      for (let i = 0; i < n; i++) {
+        const curr = queue[i];
+        for (const letterGrade of gpaStandardKeys) {
+          const currError = credits * (maxGpa - gpaStandard[letterGrade]);
+          // Check if the error is too large (if so, then don't add to the queue)
+          // If this is the final error check, then check to make sure that the error as close as possible to the maximum error
+          if (curr[0] + currError > maxError || (j === courseCredits.length - 1 && maxError - (curr[0] + currError) >= maxErrorDiff)) {
+            break;
+          }
+          const copy = JSON.parse(JSON.stringify(curr[1]));
+          // Add letter grade to the list of grades associated with the current credit count
+          if (copy[credits] === undefined) {
+            copy[credits] = [];
+          }
+          copy[credits].push(letterGrade);
+          queue.push([curr[0] + currError, copy]);
+        }
+      }
+      // TODO Consider using splice() for the queue instead of slice() w/ re-assignment
+      // Remove the processed items from the queue
+      queue = queue.slice(n);
+    }
+    // Sort by the error then map to an array of letter grades (maps directly to the sorted credits array)
+    const results = queue.map(elm => {
+      // Get credits in a consist format (used for duplication removal later)
+      const keys = Object.keys(elm[1]).sort((a,b) => b-a);
+      const curr = [];
+      for (const key of keys) {
+        const tmp = elm[1][key].sort((a,b) => {
+          // If the GPA's associated with the two current letter grades are not equal, then compare them
+          if (gpaStandard[a] !== gpaStandard[b]) {
+            return gpaStandard[b] - gpaStandard[a];
+          }
+          // If they are equal, then compare the letter grade representations (while considering plus and minus signs)
+          return (b + ',').localeCompare(a + ',');
+        });
+        // Add letter grades in sorted order (used for duplication removal later)
+        curr.push(...tmp);
+      }
+      return curr;
+    });
+    // Use set for keeping track of duplicates (memory goes crazy)
+    const seen = new Set();
+    const uniqueRes = [];
+    for (const data of results) {
+      // Convert to string for set detection (and addition)
+      const s = data.toString(); 
+      if (seen.has(s)) {
+        continue;
+      }
+      // If data is unique, then add to set and final result
+      seen.add(s);
+      uniqueRes.push(data);
+    }
+    // If the number is results is at least 10 or if we have tried this enough times, then return the results
+    if (uniqueRes.length >= 10 || maxErrorDiff > maxGpa * courseCredits.length) { 
+      uniqueRes.sort((a,b) => findVariance(gpaStandard, a) - findVariance(gpaStandard, b));
+      // Limit response to 50 elements
+      // Convert each element to an object that maps credits to an array of grades
+      return uniqueRes.slice(0,50)
+      .map(result => 
+        result.reduce((acc, grade, index) => {
+          if (acc[courseCredits[index]] === undefined) {
+            acc[courseCredits[index]] = [];
+          }
+          acc[courseCredits[index]].push(grade);
+          return acc;
+        }, {})
+      );
+    }
+    // Increment the error (to allow more grades to satisfy the given conditions)
+    maxErrorDiff += 0.5;
+  }
 }
 const applyCustomFont = async function(font) {
-  console.log('in', font);
   try {
     // Don't do anything if the input is empty or if the toggle switch is off 
     if (font.trim() === '') {
@@ -87,7 +244,6 @@ if (document.title === 'Dashboard') {
     thisFunctionDoesNotExistAndWasCreatedWithTheOnlyPurposeOfStopJavascriptExecutionOfAllTypesIncludingCatchAndAnyArbitraryWeirdScenario();
   })
   .then(async courses => {
-    const customFontStyle = document.createElement('style');
     // Listen for updating grade overlays when the settings are updated using the popup
     chrome.storage.onChanged.addListener(async (changes, _namespace) => {
       for await (const [key, { newValue: config }] of Object.entries(changes)) {
@@ -105,7 +261,6 @@ if (document.title === 'Dashboard') {
             gradeOverlay.style.display = 'none';
             continue;
           }
-          console.log(config);
           // Or else reset the display to the original
           gradeOverlay.style.display = 'block';
           // Access grade and letter grade from dataset map (avoid DOM parsing and any unnecessary recalculations)
@@ -115,7 +270,6 @@ if (document.title === 'Dashboard') {
           gradeOverlay.style.color = config.text_color;
           if (config.use_custom_font) {
             await applyCustomFont(config.custom_font ?? '');
-            console.log('in onchange', window.customFont);
           }
           gradeOverlay.style.fontFamily = config.use_custom_font ? window.customFont ?? config.font_style : config.font_style;
           gradeOverlay.textContent = grade === 'NG' ? `No Grade ${config.show_letter_grade ? '(NG)' : ''}` : `${grade}%`;
@@ -129,9 +283,13 @@ if (document.title === 'Dashboard') {
     // Get all config settings from storage
     const config = await chrome.storage.local.get();
     // Store the primary color (used for customizing the popup)
+    if (config.undefined !== undefined) {
+      await chrome.storage.local.remove(['undefined']);
+    }
     if (config.primary_color === undefined) {
       config.primary_color = getComputedStyle(document.body).getPropertyValue('--dt-color-primary');
-      saveConfig({ primary_color: config.primary_color });
+      await saveConfig(config.primary_color, 'primary_color');
+      // await saveConfig({ primary_color: config.primary_color }, null);
     }
     // Return config for the current course and the global config
     return [courses, config];
@@ -139,6 +297,8 @@ if (document.title === 'Dashboard') {
   .then(async ([courses,config]) => {
     // Get the container for all of the dashboard cards
     const cardsContainer = document.getElementById('DashboardCard_Container').children[0].children[0];
+    // Store grades that are computed for the grade overlay (to prevent re-calculation) - Format: { course_id : [course_grade, course_letter_grade] }
+    window.computedGrades = {};
     // Map all of the courses to the grades in that course
     const gradePromises = courses.map(async (course, index) => {
       // Attempt to get the card for the current course
@@ -151,12 +311,11 @@ if (document.title === 'Dashboard') {
         // Get the config for the current class (default to an empty object if the current class has no config)
         const classConfig = config[course.id] ?? {};
         const overlayConfig = config.grade_overlay ?? {};
-        console.log(overlayConfig);
         // Get the grade for the current class (using config and class grading standard if available)
-        const grade = (await getCourseGrade(courses[index], classConfig, null, null))[0];
+        const grade = (await getCourseGrade(courses[index], classConfig, null, null, false))[0];
         // Use the default grading standard if the current class has no grading standard
         if (isObjectEmpty(classConfig.grading_standard)) {
-          classConfig.grading_standard = course.grading_standard_id !== null ? (await retrieveGradingStandard(course.id, course.grading_standard_id)) : config.default_grading_standard ?? default_grading_standard;
+          classConfig.grading_standard = course.grading_standard_id !== null ? ((await retrieveGradingStandard(course.id, course.grading_standard_id)) ?? config.default_grading_standard ?? default_grading_standard) : config.default_grading_standard ?? default_grading_standard;
         }
         // Get the letter grade for the current course
         const letterGrade = await getLetterGrade(classConfig.grading_standard, grade);
@@ -174,7 +333,6 @@ if (document.title === 'Dashboard') {
         gradeOverlay.style.color = overlayConfig.text_color ?? 'white';
         if (overlayConfig.use_custom_font) {
           await applyCustomFont(overlayConfig.custom_font ?? '');
-          console.log('newfont', window.customFont);
         }
         gradeOverlay.style.fontFamily = overlayConfig.use_custom_font ? window.customFont ?? (overlayConfig.font_style ?? 'cursive') : overlayConfig.font_style ?? 'cursive';
         gradeOverlay.textContent = grade === 'NG' ? 'No Grade (NG)' : `${grade}%`;
@@ -186,6 +344,8 @@ if (document.title === 'Dashboard') {
         }
         gradeOverlay.classList.add('grade_overlay');
         card.prepend(gradeOverlay);
+        // TODO Consider removing the letter grade since it is not being used
+        window.computedGrades[course.id.toString()] = [grade, letterGrade];
         return grade;
       } catch (error) {
         console.error(`Failed to get grade for course ${course.id}:`, error);
@@ -193,19 +353,1040 @@ if (document.title === 'Dashboard') {
       }
     });
     // Wait for all of the grades to be set before continuing
-    await Promise.all(gradePromises)
-    return config.grade_overlay?.show_overlay === false;
+    await Promise.all(gradePromises);
+    return config;
   })
-  .then(hidingOverlays => {
-    // Do not show the grade overlay if the 
+  .then(config => {
+    const hidingOverlays = config.grade_overlay?.show_overlay === false;
+    // Do not show the grade overlay if the config is set to hide overlays
     if (hidingOverlays) {
-      return;
+      return config;
     }
     // Grades overlays were all configured, so show them all at once (they are not being hidden)
     document.querySelectorAll('.grade_overlay').forEach(gradeOverlay => {
       gradeOverlay.style.display = 'block';
     });
+    return config;
   })
+  .then(async config => {
+    // GPA Calculator
+    const customStyling = document.createElement('style');
+    customStyling.textContent = `
+    .ic-DashboardCard:has(#canvas-grades-pro-gpa-calculator) {
+      width: 320px;
+    }
+
+    #canvas-grades-pro-gpa-calculator {
+      margin-top: 20px;
+      // padding: 47.5px;
+      padding: 20px;
+      border-radius: 8px;
+      background-color: white;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      font-family: Arial, sans-serif;
+      position: relative;
+      user-select : none;
+      -moz-user-select: none;
+      margin-top: 0;
+
+      .gpa-title {
+        font-size: 18px;
+        font-weight: bold;
+        margin-top: 6px;
+        margin-bottom: -4px;
+        color: #333;
+      }
+
+      #first-gpa-title.gpa-title {
+        margin-top: 12px;
+      }
+
+      .gpa-value {
+        font-size: 38px;
+        font-weight: bold;
+        margin-bottom: 4px;
+        color: #333;
+      }
+
+      #gpa-semester-subcontainer, #gpa-cumulative-subcontainer {
+        display: inline-flex;
+        flex-direction: row-reverse;
+        align-items: center;
+        gap: 6px;
+      }
+
+      #gpa-semester-subcontainer > i:hover {
+        cursor: pointer;
+      }
+        
+      #gpa-cumulative-subcontainer {
+        height: 1.5rem;
+        gap: 0;
+      }
+
+      #gpa-cumulative-subcontainer > div:not(.switch-container) {
+        font-size: .675rem;
+      }
+
+      #gpa-cumulative-subcontainer > div.switch-container {
+        transform: scale(0.5);
+        margin-left: -.5rem;
+      }
+
+      .gpa-value.blurred {
+        text-shadow: 0 0 24px black;
+        color: transparent;
+      }
+
+      .gpa-error-message {
+        font-size: .8rem;
+        color: red;
+        font-weight: bold;
+        margin: 10px 0;
+      }
+
+      #gpa-button-container {
+        display: flex;
+        flex-direction: row;
+        gap: 6px;
+        width: 106%;
+        margin-left: -3%;
+      }
+
+      #gpa-button-container i.fa-question-circle {
+        position: absolute;
+        transform: translateY(-24px);
+      }
+
+      #gpa-button-container i.fa-question-circle:hover {
+        cursor: pointer;
+      }
+
+      #gpa-button-container > button {
+        background-color: #f3f4f6;
+        color: #333;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        cursor: pointer;
+        width: 100%;
+        text-align: center;
+      }
+
+      #gpa-button-container > button:hover {
+        background-color: #e2e3e5;
+      }
+
+      #eye-icon {
+        position: absolute;
+        top: 3px;
+        right: 10px;
+        cursor: pointer;
+        font-size: 18px;
+        color: #666;
+      }
+
+      #toggle-text {
+        position: absolute;
+        top: 8px;
+        right: 36px;
+        font-size: 12px;
+        color: #666;
+        cursor: pointer;
+      }
+
+      #gpa-semester-subcontainer select {
+        width: fit-content;
+        margin-bottom: 0;
+        height: 2rem;
+        font-size: 0.7rem;
+      }
+      
+      #gpa-semester-subcontainer select:focus {
+        outline: none !important;
+      }
+
+      #gpa-current-semester {
+        position: absolute;
+        top: 6px;
+        left: 10px;
+        color: #666;
+        font-size: 12px;
+        font-family: serif;   
+      }
+
+      #gpa-calculator-info-container {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 0;
+        margin-bottom: 6px;
+        margin-left: -.5rem;
+        height: 1.4rem;
+      }
+
+      #gpa-calculator-info {
+        order: 1;
+      }
+        
+      #gpa-calculator-info-text {
+        font-size: .55rem;
+        text-align: left;
+        display: none;
+        margin-top: -10px;
+        order: 1;
+      }
+
+      #gpa-calculator-info-label {
+        font-size: .7rem;
+        text-align: left;
+        order: 2;
+        margin-left: .3rem;
+      }
+
+      #gpa-calculator-info-container i.fa-question-circle:hover + div {
+        display: revert;
+      }
+
+      #gpa-calculator-info-container div:has(+ i.fa-question-circle:hover) {
+        display: none;
+      }
+    }
+    `;
+    document.head.appendChild(customStyling);
+    // Create a template toggle switch element
+    const toggleSwitch = document.createElement('div');
+    toggleSwitch.classList.add('switch-container');
+    const toggleSwitchLabel = document.createElement('label');
+    toggleSwitchLabel.classList.add('switch');
+    const toggleSwitchInput = document.createElement('input');
+    toggleSwitchInput.type = 'checkbox';
+    const toggleSwitchSlider = document.createElement('span');
+    toggleSwitchSlider.classList.add('slider', 'round');
+    toggleSwitchLabel.appendChild(toggleSwitchInput);
+    toggleSwitchLabel.appendChild(toggleSwitchSlider);
+    toggleSwitch.appendChild(toggleSwitchLabel);
+    // Create elements for the GPA calculator
+    const gpaCalculatorContainer = document.createElement('div');
+    gpaCalculatorContainer.id = 'canvas-grades-pro-gpa-calculator';
+    const gpaCurrentSemesterName = document.createElement('div');
+    gpaCurrentSemesterName.id = 'gpa-current-semester';
+    const gpaCalculatorToggleText = document.createElement('div');
+    gpaCalculatorToggleText.id = 'toggle-text';
+    gpaCalculatorToggleText.textContent = config.gpa_config?.gpa_view === false ? 'Show GPA' : 'Hide GPA';
+    const gpaCalculatorToggleEye = document.createElement('div');
+    gpaCalculatorToggleEye.id = 'eye-icon';
+    const gpaCalculatorEyeIcon = document.createElement('i');
+    gpaCalculatorEyeIcon.classList.add('fa', config.gpa_config?.gpa_view === false ? 'fa-eye-slash' : 'fa-eye');
+    const gpaCumulativeTitle = document.createElement('div');
+    gpaCumulativeTitle.classList.add('gpa-title');
+    gpaCumulativeTitle.textContent = 'Cumulative GPA';
+    const gpaCumulativeValue = document.createElement('div');
+    gpaCumulativeValue.classList.add('gpa-value');
+    if (config.gpa_config?.gpa_view === false) {
+      gpaCumulativeValue.classList.add('blurred');
+    }
+    gpaCumulativeValue.textContent = '-';
+    const gpaCumulativeSubContainer = document.createElement('div');
+    gpaCumulativeSubContainer.id = 'gpa-cumulative-subcontainer';
+    const gpaCumulativeSwitch = toggleSwitch.cloneNode(true);
+    const gpaCumulativeCheckbox = gpaCumulativeSwitch.querySelector('input[type="checkbox"]');
+    gpaCumulativeCheckbox.checked = config.gpa_config?.include_current_semester === true;
+    const gpaCumulativeSubTitle = document.createElement('div');
+    gpaCumulativeSubTitle.textContent = 'Include current term in cumulative GPA?'
+    gpaCumulativeSubContainer.appendChild(gpaCumulativeSwitch);
+    gpaCumulativeSubContainer.appendChild(gpaCumulativeSubTitle);
+    const gpaCumulativeError = document.createElement('div');
+    gpaCumulativeError.classList.add('gpa-error-message');
+    // Create a subcontainer for the buttons
+    const gpaCalculatorButtonContainer = document.createElement('div');
+    gpaCalculatorButtonContainer.id = 'gpa-button-container';
+    // Create tooltip for providing information about the different buttons
+    const gpaCalculatorInfo = document.createElement('i');
+    gpaCalculatorInfo.classList.add('fas', 'fa-question-circle');
+    const gpaCalculatorInfoText = document.createElement('div');
+    gpaCalculatorInfoText.id = 'gpa-calculator-info-text'
+    gpaCalculatorInfoText.innerHTML = '<i><u>Edit GPA Config:</u></i> Set credits and grades for your courses<br><i><u>Edit GPA Standard:</u></i> Set letter grade to GPA mapping<br><i><u>Calculate Min Gpa:</u></i> Minimum GPA this term for target cumulative GPA';
+    const gpaCalculatorInfoLabel = document.createElement('div');
+    gpaCalculatorInfoLabel.id = 'gpa-calculator-info-label';
+    gpaCalculatorInfoLabel.innerHTML = 'What are these buttons?';
+    const gpaCalculatorInfoContainer = document.createElement('div');
+    gpaCalculatorInfoContainer.id = 'gpa-calculator-info-container';
+    gpaCalculatorInfoContainer.appendChild(gpaCalculatorInfo);
+    gpaCalculatorInfoContainer.appendChild(gpaCalculatorInfoText);
+    gpaCalculatorInfoContainer.appendChild(gpaCalculatorInfoLabel);
+    gpaCalculatorInfo.insertAdjacentElement('afterend', gpaCalculatorInfoLabel);
+    const gpaCalculatorEditConfig = document.createElement('button');
+    gpaCalculatorEditConfig.id = 'edit-class-config';
+    gpaCalculatorEditConfig.textContent = 'Edit GPA Config';
+    const gpaCalculatorEditStandard = document.createElement('button');
+    gpaCalculatorEditStandard.id = 'edit-gpa-standard';
+    gpaCalculatorEditStandard.textContent = 'Edit GPA Standard';
+    const gpaCalculatorMinGpa = document.createElement('button');
+    gpaCalculatorMinGpa.id = 'calculate-min-gpa';
+    gpaCalculatorMinGpa.textContent = 'Calculate Min GPA'
+    // Create the container for the GPA titles and values
+    const gpaCalculatorSubContainer = document.createElement('div');
+    // Create the subcontainer for the semester and cumulative GPA's
+    const gpaCumulativeContainer = document.createElement('div');
+    gpaCumulativeContainer.appendChild(gpaCumulativeTitle);
+    gpaCumulativeContainer.appendChild(gpaCumulativeValue);
+    gpaCumulativeContainer.appendChild(gpaCumulativeError);
+    const gpaSemesterContainer = gpaCumulativeContainer.cloneNode(true);
+    const gpaSemesterTitle = gpaSemesterContainer.firstElementChild;
+    // Create a subcontainer for holding the semester dropdown/text 
+    const gpaSemesterSubContainer = document.createElement('div');
+    gpaSemesterSubContainer.id = 'gpa-semester-subcontainer';
+    const gpaSemesterSubTitle = document.createElement('div');
+    const gpaSemesterEditIcon = document.createElement('i');
+    gpaSemesterEditIcon.classList.add('fas', 'fa-edit');
+    gpaSemesterSubTitle.textContent = '';
+    gpaSemesterSubContainer.appendChild(gpaSemesterEditIcon);
+    gpaSemesterSubContainer.appendChild(gpaSemesterSubTitle);
+    gpaCumulativeTitle.insertAdjacentElement('afterend', gpaCumulativeSubContainer);
+    gpaSemesterTitle.insertAdjacentElement('afterend', gpaSemesterSubContainer);
+    const gpaSemesterValue = gpaSemesterContainer.querySelector('.gpa-value');
+    const gpaSemesterError = gpaSemesterContainer.lastElementChild;
+    gpaSemesterTitle.textContent = 'Term GPA';
+    gpaSemesterValue.textContent = '-';
+    gpaCumulativeTitle.id = 'first-gpa-title';
+    // Add all of the elements to the main GPA calculator container
+    gpaCalculatorToggleEye.appendChild(gpaCalculatorEyeIcon);
+    gpaCalculatorContainer.appendChild(gpaCurrentSemesterName);
+    gpaCalculatorContainer.appendChild(gpaCalculatorToggleText);
+    gpaCalculatorContainer.appendChild(gpaCalculatorToggleEye);
+    gpaCalculatorSubContainer.appendChild(gpaCumulativeContainer);
+    gpaCalculatorSubContainer.appendChild(gpaSemesterContainer);
+    gpaCalculatorContainer.appendChild(gpaCalculatorSubContainer);
+    gpaCalculatorInfoContainer.appendChild(gpaCalculatorInfo);
+    gpaCalculatorInfoContainer.appendChild(gpaCalculatorInfoText);
+    gpaCalculatorButtonContainer.appendChild(gpaCalculatorEditConfig);
+    gpaCalculatorButtonContainer.appendChild(gpaCalculatorEditStandard);
+    gpaCalculatorButtonContainer.appendChild(gpaCalculatorMinGpa);
+    gpaCalculatorContainer.appendChild(gpaCalculatorInfoContainer);
+    gpaCalculatorContainer.appendChild(gpaCalculatorButtonContainer);
+    // Function for controlling the display of the GPA (normal display to blurred and vice versa)
+    const toggleGPA = async function() {
+      gpaCumulativeValue.classList.toggle('blurred');
+      gpaSemesterValue.classList.toggle('blurred');
+      const state = gpaCumulativeValue.classList.contains('blurred');
+      gpaCalculatorToggleText.textContent = state ? 'Show GPA' : 'Hide GPA';
+      gpaCalculatorEyeIcon.classList.add(state ? 'fa-eye-slash' : 'fa-eye');
+      gpaCalculatorEyeIcon.classList.remove(state ? 'fa-eye' : 'fa-eye-slash');
+      if (config.gpa_config === undefined) {
+        config.gpa_config = {};
+      }
+      if (config.gpa === undefined) {
+        config.gpa = {};
+      }
+      config.gpa_config.gpa_view = !state;
+      await saveConfig(config.gpa_config, 'gpa_config');
+    }
+    // Attach event listeners
+    gpaCalculatorToggleEye.addEventListener('click', toggleGPA);
+    gpaCalculatorToggleText.addEventListener('click', toggleGPA);
+    // Create card for your GPA (add it before all of the cards for your classes)
+    const gpaCard = document.createElement('div');
+    gpaCard.classList.add('ic-DashboardCard');
+    // Hide the gpa card while it is being configured
+    gpaCard.style.display = 'none';
+    gpaCard.appendChild(gpaCalculatorContainer);
+    // Get all of the courses that the user has taken (that they can view or at least know the existance of)
+    // Loop through all of the pages until the page is empty (or until the world ends...)
+    const allCourses = [];
+    let coursesPage = 1;
+    while (true) {
+      const response = await fetch(`/api/v1/courses?per_page=100&include[]=term&state[]=unpublished&state[]=available&state[]=completed&page=${coursesPage}`);
+      const courses = await response.json();
+      if (courses.length === 0) {
+        break;
+      }
+      for (const course of courses) {
+        allCourses.push(course);
+      }
+      coursesPage++;
+    }
+    let gpaStandard = config.default_gpa_standard ?? default_gpa_standard;
+    // TODO Modify this so that the user can set a preference for adding the gpa card to the end of the dashboard card list
+    document.querySelector('.ic-DashboardCard__box__container').prepend(gpaCard);
+    // Create popup for editing the configuration for the gpa calculator
+    const popup = document.createElement('div');
+    const overlay = document.createElement('div');
+    const content = document.createElement('div');
+    const closeButton = document.createElement('span');
+    const popupTitle = document.createElement('h2');
+    const popupNotes = document.createElement('p');
+    const popupContainer = document.createElement('div');
+    const saveChangesButton = document.createElement('button');
+    const saveChangesLabel = document.createElement('p');
+    const gpaGrid = document.createElement('div');
+    const cols = ['Course Name', 'Term', 'Credits', 'Grade'];
+    const badTermNames = ['Default Term', 'Catalog'];
+    // Store data for each of the semesters (format: { term_id : [semester_name, semester_score, semester_credits] })
+    window.semesters = {};
+    for (const col of cols) {
+      const gridHeadItem = document.createElement('div');
+      gridHeadItem.classList.add('grid-item', 'active');
+      gridHeadItem.id = col.replace(/\s/g, '-').toLowerCase();
+      gridHeadItem.textContent = col;
+      gpaGrid.appendChild(gridHeadItem);
+    }
+    const gradeDropdown = document.createElement('select');
+    // Temporarily add "auto" to gpa standard (so that it is included in the dropdown menu)
+    gpaStandard['AUTO'] = Infinity;
+    gpaStandard['blank'] = Infinity;
+    const sortedGpaStandard = Object.keys(gpaStandard).sort((a,b) => {
+      // If the GPA's associated with the two current letter grades are not equal, then compare them
+      if (gpaStandard[a] !== gpaStandard[b]) {
+        return gpaStandard[b] - gpaStandard[a];
+      }
+      // If they are equal, then compare the letter grade representations (while considering plus and minus signs)
+      return (b + ',').localeCompare(a + ',');
+    });
+    for (const letterGrade of sortedGpaStandard) {
+      const option = document.createElement('option');
+      option.classList.add(letterGrade);
+      option.textContent = letterGrade === 'blank' ? '' : letterGrade;
+      option.value = gpaStandard[letterGrade];
+      gradeDropdown.appendChild(option);
+    }
+    delete gpaStandard['AUTO'];
+    delete gpaStandard['blank'];
+    // Popuplate the gpa calculator menu with all of your courses (that you have taken or are currently taking)
+    allCourses.sort((a,b) => {
+      const a_term_id = a.term === undefined || badTermNames.includes(a.term.name) ? -Infinity : a.term.id;
+      const b_term_id = b.term === undefined || badTermNames.includes(b.term.name) ? -Infinity : b.term.id;
+      if (a_term_id != b_term_id) {
+        return b_term_id - a_term_id;
+      }
+      return a.course_code.localeCompare(b.course_code);
+    });
+    // Try to get the current semester id (get the maximum semester id)
+    let currentSemesterId = -1;
+    let currentSemesterName = '';
+    for (const course of allCourses) {
+      if (course.term !== undefined && !badTermNames.includes(course.term.name) && window.semesters[course.term.id] === undefined) {
+        window.semesters[course.term.id] = [course.term.name, 0, 0];
+      }
+      for (const col of cols) {
+        const gridItem = document.createElement('div');
+        const name = col.replace(/\s/g, '-').toLowerCase();
+        gridItem.classList.add('grid-item', `row-${course.id}`, name);
+        gridItem.dataset.semester_id = course.term.id;
+        if (name === 'course-name') {
+          gridItem.textContent = course.course_code;
+        } else if (name === 'term') {
+          // Check if the term is valid
+          if (course.term === undefined || badTermNames.includes(course.term.name)) {
+            gridItem.textContent = '\u200b';
+          } else {
+            gridItem.textContent = course.term.name;
+            if (currentSemesterId < course.term.id) {
+              currentSemesterId = course.term.id;
+              currentSemesterName = course.term.name;
+            }
+          }
+        } else if (name === 'credits') {
+          const textInput = document.createElement('input');
+          textInput.type = 'text';
+          textInput.spellcheck = false;
+          textInput.autocomplete = false;
+          textInput.maxLength = 3;
+          textInput.value = config.gpa?.[course.id]?.credits ?? '';
+          gridItem.appendChild(textInput);
+        } else if (name === 'grade') {
+          const dropdown = gradeDropdown.cloneNode(true);
+          // If the term for the current course is not the most recent / current term, then remove the "auto" option from the dropdown
+          if (course.term === undefined || course.term.id !== currentSemesterId) {
+            dropdown.querySelector('option[class="AUTO"]').remove();
+          }
+          gridItem.appendChild(dropdown);
+        }
+        gpaGrid.appendChild(gridItem);
+      }
+    }
+    gpaGrid.classList.add('grid-container');
+    // Set the subtitle for the current semester (tells the user what the "current semester" is)
+    gpaCurrentSemesterName.textContent = currentSemesterName === '' ? '' : `Current Term: ${currentSemesterName}`;
+    gpaSemesterSubTitle.textContent = currentSemesterName || 'N/A';
+    gpaSemesterSubTitle.style.fontSize = '.7rem';
+    popupContainer.appendChild(gpaGrid);
+    popup.classList.add('popup-canvas-grades-pro');
+    overlay.classList.add('overlay');
+    content.classList.add('content');
+    closeButton.classList.add('close-btn');
+    closeButton.innerHTML = '&times';
+    popupTitle.textContent = 'GPA Course Config';
+    popupNotes.innerHTML = `Note: For courses that are <span style="text-decoration:underline;">not graded</span> use 0 credits.<br><span style="font-size: 0.7rem;">Use "AUTO" grade to automatically calculate grades. Only for current term courses.</span>`;
+    popupNotes.style.margin = '-5px 0 0';
+    popupContainer.classList.add('container-canvas-grades-pro');
+    saveChangesButton.id = 'popup-save-changes';
+    saveChangesButton.textContent = 'Save Changes!';
+    saveChangesLabel.id = 'popup-save-changes-label';
+    saveChangesLabel.text = '\u200b';
+
+    // Create semesters dropdown (will be cloned later rather than re-created)
+    const semestersDropdown = document.createElement('select');
+    for (const semesterID of Object.keys(window.semesters).sort((a,b) => +b - +a)) {
+      const option = document.createElement('option');
+      option.value = semesterID;
+      option.textContent = window.semesters[semesterID][0];
+      option.classList.add(`semester-${semesterID}`);
+      semestersDropdown.appendChild(option);
+    }
+    content.appendChild(closeButton);
+    content.appendChild(popupTitle);
+    content.appendChild(popupNotes);
+    content.appendChild(popupContainer);
+    content.appendChild(saveChangesLabel);
+    content.appendChild(saveChangesButton);
+    popup.appendChild(overlay);
+    popup.appendChild(content);
+    // Copy the existing popup and modify it for the gpa standard configuration popup and the min gpa required for your current semester gpa calculator
+    const gpaStandardPopup = popup.cloneNode(true);
+    const minGpaPopup = popup.cloneNode(true);
+    // Modify the cloned popups
+    const gpaStandardContent = gpaStandardPopup.querySelector('.content');
+    const minGpaContent = minGpaPopup.querySelector('.content');
+    gpaStandardContent.replaceChildren();
+    minGpaContent.replaceChildren();
+    // Configure the gpa standard popup
+    const gpaStandardTitle = popupTitle.cloneNode(true);
+    gpaStandardTitle.textContent = 'GPA Standard Config';
+    // Create and configure the table for the gpa standard (use config.default_gpa_standard)
+    const gpaStandardTable = document.createElement('table');
+    gpaStandardTable.id = 'gpa-standard-table';
+    const gpaStandardHead = document.createElement('thead');
+    const gpaStandardHeadRow = document.createElement('tr');
+    for (const col of ['Grade', 'GPA']) {
+      const cell = document.createElement('th');
+      cell.scope = 'col';
+      cell.textContent = col;
+      gpaStandardHeadRow.appendChild(cell);
+    }
+    gpaStandardHead.appendChild(gpaStandardHeadRow);
+    const gpaStandardBody = document.createElement('tbody');
+    for (const letterGrade of sortedGpaStandard) {
+      if (gpaStandard[letterGrade] === undefined) {
+        continue;
+      }
+      const row = document.createElement('tr');
+      const letterGradeCell = document.createElement('td');
+      const gpaCell = document.createElement('td');
+      letterGradeCell.textContent = letterGrade;
+      gpaCell.textContent = gpaStandard[letterGrade];
+      row.appendChild(letterGradeCell);
+      row.appendChild(gpaCell);
+      gpaStandardBody.appendChild(row);
+    }
+    gpaStandardTable.appendChild(gpaStandardHead);
+    gpaStandardTable.appendChild(gpaStandardBody);
+    const gpaStandardInputDesc = document.createElement('div');
+    gpaStandardInputDesc.textContent = 'Please enter your GPA Standard below. Each line should be a letter grade and a gpa value, seperated by a space';
+    const gpaStandardInput = document.createElement('textarea');
+    gpaStandardInput.placeholder = 'A 4\nA- 3.7\nB+ 3.3\nB 3\nB- 2.7'
+    gpaStandardInput.style.display = 'none';
+    gpaStandardInput.id = 'gpa-standard-input';
+    const gpaStandardInputMessage = document.createElement('div');
+    gpaStandardInputMessage.id = 'gpa-standard-input-message';
+    const gpaStandardButton = document.createElement('i');    
+    gpaStandardButton.id = 'gpa-standard-button';
+    gpaStandardButton.classList.add('fas', 'fa-edit');
+    const gpaStandardButtonContainer = document.createElement('div');
+    gpaStandardButtonContainer.id = 'gpa-standard-button-container';
+    const gpaStandardButtonLabel = document.createElement('div');
+    gpaStandardButtonLabel.textContent = 'Edit GPA Standard';
+    // Add gpa standard elements to the popup
+    gpaStandardContent.appendChild(gpaStandardTitle);
+    gpaStandardContent.appendChild(gpaStandardInput);
+    gpaStandardContent.appendChild(gpaStandardTable);
+    gpaStandardButtonContainer.appendChild(gpaStandardButton);
+    gpaStandardButtonContainer.appendChild(gpaStandardButtonLabel);
+    gpaStandardContent.appendChild(gpaStandardInputMessage);
+    gpaStandardContent.appendChild(gpaStandardButtonContainer); 
+    gpaStandardContent.appendChild(closeButton.cloneNode(true));
+    const editGpaStandard = async function() {
+      // Modify the display of the gpa standard elements (show text input for editing and show table for viewing)
+      if (gpaStandardButton.classList.contains('fa-edit')) { // Editing mode
+        // Construct the default input text using the existing gpa standard
+        let str = '';
+        for (const row of Array.from(gpaStandardBody.children)) {
+          str += `${row.firstElementChild.textContent} ${row.lastElementChild.textContent}\n`;
+        }
+        gpaStandardInput.value = str.trim();
+        gpaStandardButton.classList.replace('fa-edit', 'fa-save');
+        gpaStandardInput.style.display = '';
+        gpaStandardTable.style.display = 'none';
+        gpaStandardButtonLabel.textContent = 'Save GPA Standard';
+      } else { // Saving mode
+        // Valid the data and only save it to storage if the input is completely valid
+        const input = gpaStandardInput.value.trim();
+        if (input === '') {
+          gpaStandardInputMessage.textContent = 'Please provide a non-empty input';
+          return;
+        }
+        // Process each line and the data (only update in storage if everything is valid)
+        const data = {};
+        for (const line of input.split('\n')) {
+          // If the current line is invalid, then set the error message and exit
+          if (!/^.+\s+\d+(|\.|\.\d+)$/.test(line.trim())) {
+            gpaStandardInputMessage.textContent = `Invalid input for "${line}"`;
+            gpaStandardInputMessage.style.display = 'block';
+            return;
+          }
+          // Line is valid, parse values then store
+          const curr = line.trim().split(/\s+/);
+          if (data[curr[0]] !== undefined) {
+            gpaStandardInputMessage.textContent = `Please provide unique letter grades. "${curr[0]} was reused."`
+          }
+          data[curr[0]] = Number(curr[1]);
+        }
+        // Update the existing gpa standard in storage and in the existing local variable
+        gpaStandard = data;
+        config.default_gpa_standard = data;
+        await saveConfig(config.default_gpa_standard, 'default_gpa_standard');
+        gpaStandard['AUTO'] = Infinity;
+        gpaStandard['blank'] = Infinity
+        const sortedGpaStandard = Object.keys(gpaStandard).sort((a,b) => {
+          // If the GPA's associated with the two current letter grades are not equal, then compare them
+          if (gpaStandard[a] !== gpaStandard[b]) {
+            return gpaStandard[b] - gpaStandard[a];
+          }
+          // If they are equal, then compare the letter grade representations (while considering plus and minus signs)
+          return (b + ',').localeCompare(a + ',');
+        });
+        delete gpaStandard['AUTO'];
+        delete gpaStandard['blank'];
+        // Reconstruct the dropdown and rebuild the gpa config table
+        gpaStandardBody.replaceChildren();
+        for (const grade of sortedGpaStandard) {
+          if (gpaStandard[grade] === undefined) {
+            continue;
+          }
+          const tableRow = document.createElement('tr');
+          const gradeCell = document.createElement('td');
+          const gpaCell = document.createElement('td');
+          gradeCell.textContent = grade;
+          gpaCell.textContent = gpaStandard[grade];
+          tableRow.appendChild(gradeCell);
+          tableRow.appendChild(gpaCell);
+          gpaStandardBody.appendChild(tableRow);
+        }
+        // Update the master grade dropdown then re-clone to all of the existing dropdowns in the gpa config popup
+        gradeDropdown.replaceChildren();
+        for (const letterGrade of sortedGpaStandard) {
+          const option = document.createElement('option');
+          option.classList.add(letterGrade);
+          option.textContent = letterGrade === 'blank' ? '' : letterGrade;
+          option.value = gpaStandard[letterGrade];
+          gradeDropdown.appendChild(option);
+        }
+        document.querySelectorAll('.container-canvas-grades-pro .grid-container > .grid-item > select').forEach(elm => {
+          const dropdown = gradeDropdown.cloneNode(true);
+          // Store the initial dropdown value, and set it for the newly created dropdown (if it's not in the newly created dropdown, use the blank option)
+          const initial = elm.options[elm.selectedIndex].textContent || 'blank';
+          if (+elm.parentElement.dataset.semester_id !== currentSemesterId) {
+            dropdown.querySelector('option[class="AUTO"]').remove();
+          }
+          // Replace old dropdown menu with the newly rebuild one based on the new gpa standard
+          elm.replaceWith(dropdown);
+          // Select the initial drop value for the newly cloned dropdown menu
+          const initialOption = dropdown.querySelector(`option[class="${initial}"]`);
+          if (initialOption !== null) {
+            initialOption.selected = true;
+            return;
+          }
+          const courseID = RegExp(/row-(\d+)/g).exec(dropdown.parentElement.classList.toString())[1];
+          const storageOption = dropdown.querySelector(`option[class="${config.gpa[courseID].letter_grade}"]`);
+          if (storageOption !== null) {
+            storageOption.selected = true;
+            return;
+          }
+          config.gpa[courseID].letter_grade = '';
+          dropdown.querySelector(`option[class="blank"]`).selected = true;
+        });
+        gpaStandardInputMessage.textContent = '';
+        gpaStandardInputMessage.style.display = '';
+        gpaStandardButton.classList.replace('fa-save', 'fa-edit');
+        gpaStandardInput.style.display = 'none';
+        gpaStandardTable.style.display = '';
+        gpaStandardButtonLabel.textContent = 'Edit GPA Standard';
+        // Run the appropriate operations to re-calculate the gpa (save the gpa config then re-calculate it)
+        await saveConfig(config.gpa, 'gpa');
+        await calculateGpa(false);
+      }
+    }
+    gpaStandardButton.addEventListener('click', editGpaStandard);
+    gpaStandardButtonLabel.addEventListener('click', editGpaStandard);
+    // Configure the min gpa popup
+    const minGpaContainer = document.createElement('div');
+    const minGpaTitle = popupTitle.cloneNode(true);  
+    minGpaTitle.textContent = 'Min GPA Calculator';
+    const minGpaLeftSubtitle = document.createElement('h5');
+    minGpaLeftSubtitle.textContent = 'Desired GPA';
+    const minGpaRightSubtitle = document.createElement('h5');
+    minGpaRightSubtitle.textContent = 'Minimum GPA Required';
+    const minGpaInput = document.createElement('input'); 
+    minGpaInput.textContent = 'Find min GPA required for the current semester to get your desired GPA';
+    const minGpaRequired = document.createElement('span');
+    minGpaRequired.textContent = '\u200b';
+    minGpaContainer.id = 'min-gpa-container';
+    const minGpaLeftSubContainer = document.createElement('div');
+    const minGpaRightSubContainer = document.createElement('div');
+    const minGpaMessage = document.createElement('div');
+    minGpaMessage.id = 'min-gpa-message';
+    minGpaMessage.textContent = '\u200b';
+    const minGpaCalculateBtn = document.createElement('button');
+    minGpaCalculateBtn.id = 'min-gpa-calculate-btn';
+    minGpaCalculateBtn.textContent = 'Calculate!';
+    // Add gpa standard elements to the popup
+    minGpaContent.appendChild(minGpaTitle);
+    minGpaLeftSubContainer.appendChild(minGpaLeftSubtitle);
+    minGpaLeftSubContainer.appendChild(minGpaInput);
+    minGpaRightSubContainer.appendChild(minGpaRightSubtitle);
+    minGpaRightSubContainer.appendChild(minGpaRequired);
+    minGpaContainer.appendChild(minGpaLeftSubContainer);
+    minGpaContainer.appendChild(minGpaRightSubContainer);
+    minGpaContent.appendChild(minGpaContainer);
+    minGpaContent.appendChild(minGpaMessage);
+    minGpaContent.appendChild(minGpaCalculateBtn);
+    minGpaContent.appendChild(closeButton.cloneNode(true));
+    const findMinGpaRequired = function() {
+      const desiredGpa = minGpaLeftSubContainer.querySelector('input').value;
+      if (desiredGpa === '' || !/^\d+(|\.|\.\d+)$/.test(desiredGpa.trim()) || Number(desiredGpa) < 0) {
+        minGpaMessage.textContent = "Please use non-negative numerical values for your desired GPA";
+        minGpaRequired.textContent = '';
+        return;
+      }
+      minGpaMessage.textContent = '\u200b';
+      const data = Object.values(window.semesters);
+      let qualityPoints = -window.semesters[currentSemesterId][1];
+      let credits = 0;
+      for (const termData of data) {
+        if (termData[1] === -1) {
+          minGpaMessage.textContent = "Please use non-negative numerical values for your desired GPA";
+          minGpaRequired.textContent = '';
+          return;
+        }
+        qualityPoints += termData[1];
+        credits += termData[2];
+      }
+      if (credits === 0) {
+        console.error('Zero credits were detected for the current term', window.semesters);
+      }
+      const minGpa = Math.max(0, Math.floor(1e3 * ((+desiredGpa * credits - qualityPoints) / window.semesters[currentSemesterId][2])) / 1e3);
+      const gpaStandardGrades = Object.keys(gpaStandard);
+      let maxLetterGrade = gpaStandardGrades[0];
+      for (const letterGrade of gpaStandardGrades) {
+        // If the GPA's associated with the two current letter grades are not equal, then compare them
+        if (gpaStandard[letterGrade] !== gpaStandard[maxLetterGrade]) {
+          maxLetterGrade = gpaStandard[letterGrade] > gpaStandard[maxLetterGrade] ? letterGrade : maxLetterGrade;
+          continue;
+        }
+        // If they are equal, then compare the letter grade representations (while considering plus and minus signs)
+        maxLetterGrade = (maxLetterGrade + ',').localeCompare(letterGrade + ',') > 1 ? maxLetterGrade : letterGrade;
+      }
+      minGpaRequired.textContent = Number(minGpa.toFixed(3)) + (gpaStandard[maxLetterGrade] < minGpa ? ' 😭' : (minGpa === 0 ? ' 🗿' : ''));
+      // If the user cannot get their desired gpa or if they don't have to do anything to get it, then exit early
+      if (gpaStandard[maxLetterGrade] < minGpa || minGpa === 0) {
+        return;
+      }
+      // If the current term credits includes an invalid credit, then throw an error since this point should not have been reached
+      if (window.currentTermCredits.includes(-1)) {
+        console.error('An error occurred when finding the minimum GPA combinations', window.currentTermCredits);
+      }
+      // If the user needs to "try" in order to get their desired gpa, they can use any of the generated combinations from getMinGpaCombinations()
+      window.currentTermCredits = window.currentTermCredits.filter(credits => credits !== 0);
+      const gradesData = getMinGpaCombinations(gpaStandard, window.currentTermCredits, minGpa);
+      // If there is no data, do not generate a table (this should not happen)
+      if (gradesData.length === 0) {
+        console.error('Zero rows of data were generated for your required min gpa', window.currentTermCredits);
+        return;
+      }
+      const uniqueCourseCredits = [...new Set(window.currentTermCredits)].sort((a,b) => b-a);
+      // TODO Generate the cool table using this gradesData for the user to view (use <td colspan=<number_of_columns"></td>)
+      const minGpaTable = document.createElement('table');
+      minGpaTable.id = 'min-gpa-table';
+      // Create and configure the main column (credits)
+      const minGpaTableRow = document.createElement('tr');
+      const minGpaTableCredits = document.createElement('th');
+      minGpaTableCredits.colSpan = window.currentTermCredits.length;
+      minGpaTableCredits.textContent = 'Credits';
+      minGpaTableRow.appendChild(minGpaTableCredits);
+      minGpaTable.appendChild(minGpaTableRow);
+      // Create and configure the subcolumns (each credit count that you currently have)
+      const creditsRow = document.createElement('tr');
+      // const credits of uniqueCourseCredits
+      for (let i = 0; i < uniqueCourseCredits.length; i++) {
+        const credits = uniqueCourseCredits[i];
+        const creditsCell = document.createElement('td');
+        creditsCell.textContent = credits;
+        creditsCell.colSpan = gradesData[0][credits].length;
+        // If this is not the last group, then add a border
+        if (i !== uniqueCourseCredits.length-1) {
+          creditsCell.classList.add('cell-divider');
+        }
+        creditsRow.appendChild(creditsCell);
+      }
+      minGpaTable.appendChild(creditsRow);
+      for (const result of gradesData) {
+        const row = document.createElement('tr');
+        for (let i = 0; i < uniqueCourseCredits.length; i++) {
+          const credits = uniqueCourseCredits[i];
+          for (let j = 0; j < result[credits].length; j++) {
+            const grade = result[credits][j];
+            const gradesCell = document.createElement('td');
+            gradesCell.textContent = grade;
+            if (i !== uniqueCourseCredits.length-1 && j === result[credits].length-1) {
+              gradesCell.classList.add('cell-divider');
+            }
+            if (i !== uniqueCourseCredits.length-1 && j !== result[credits].length-1) {
+              gradesCell.classList.add('cell-subdivider');
+            }
+            row.appendChild(gradesCell);
+          }
+        }
+        minGpaTable.appendChild(row);
+      }
+      // If there is an old table, then replace it with the new table
+      const oldTable = minGpaContent.querySelector('table');
+      if (oldTable !== null) {
+        oldTable.replaceWith(minGpaTable);
+      } else {
+        const minGpaTableContainer = document.createElement('div');
+        minGpaTableContainer.id = 'min-gpa-table-container';
+        minGpaTableContainer.appendChild(minGpaTable);
+        minGpaContent.appendChild(minGpaTableContainer);
+      }
+    }
+    minGpaCalculateBtn.addEventListener('click', findMinGpaRequired);
+    minGpaInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        findMinGpaRequired();
+      }
+    });
+    document.body.appendChild(popup);
+    document.body.appendChild(gpaStandardPopup);
+    document.body.appendChild(minGpaPopup);
+    gpaCumulativeCheckbox.addEventListener('change', async () => {
+      // Switch between the two different grades that are computed (grade with current semester and grade without current semester)
+      gpaCumulativeValue.textContent = window.currentSemesterGpa[gpaCumulativeCheckbox.checked ? 0 : 1];
+      if (config.gpa === undefined) {
+        config.gpa = {};
+      }
+      config.gpa_config.include_current_semester = gpaCumulativeCheckbox.checked;
+      await saveConfig(config.gpa_config, 'gpa_config');
+    });
+    // Add event listeners for controlling different elements relating to the gpa calculator popup
+    gpaSemesterEditIcon.addEventListener('click', () => {
+      // Check if we are saving or editing
+      if (gpaSemesterEditIcon.classList.contains('fa-save')) { // Saving mode
+        const dropdown = gpaSemesterEditIcon.nextElementSibling.firstElementChild;
+        window.semesterDropdownIndex = dropdown.selectedIndex;
+        window.semesterDropdownValue = dropdown.options[dropdown.selectedIndex].value;
+        dropdown.parentElement.textContent = dropdown.options[dropdown.selectedIndex].textContent;
+        gpaSemesterEditIcon.classList.replace('fa-save', 'fa-edit');
+        const selectedSemesterData = window.semesters[window.semesterDropdownValue];
+        gpaSemesterValue.textContent = selectedSemesterData[1] === -1 ? '⚠️' : (Math.floor(1e3 * selectedSemesterData[1] / selectedSemesterData[2]) / 1e3).toFixed(3);
+        gpaSemesterError.textContent = selectedSemesterData[1] === -1 ? `Credit count is unknown for some ${selectedSemesterData[0]} courses` : '';
+      } else { // Editing mode
+        const dropdown = semestersDropdown.cloneNode(true);
+        dropdown.selectedIndex = window.semesterDropdownIndex;
+        gpaSemesterEditIcon.nextElementSibling.replaceChildren(dropdown);
+        gpaSemesterEditIcon.classList.replace('fa-edit', 'fa-save');
+      }
+    });
+    // Modify this event listener for the class grades/credits config so that the dropdowns are all recloned (loop through them, and replace the children of the parent element with the newly created dropdown; dropdown needs to be changed during save)
+    gpaCalculatorEditConfig.addEventListener('click', () => {
+      gpaStandardPopup.classList.remove('active');
+      minGpaPopup.classList.remove('active');
+      popup.classList.add('active');
+    });
+    gpaCalculatorEditStandard.addEventListener('click', () => {
+      popup.classList.remove('active');
+      minGpaPopup.classList.remove('active');
+      gpaStandardPopup.classList.add('active');
+    });
+    gpaCalculatorMinGpa.addEventListener('click', () => {
+      popup.classList.remove('active');
+      gpaStandardPopup.classList.remove('active');
+      minGpaPopup.classList.add('active');
+    });
+    document.querySelectorAll('.close-btn').forEach(elm => {
+      elm.addEventListener('click', () => {
+        popup.classList.remove('active');
+        gpaStandardPopup.classList.remove('active');
+        minGpaPopup.classList.remove('active');
+      });
+    });
+    window.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        popup.classList.remove('active');
+        gpaStandardPopup.classList.remove('active');
+        minGpaPopup.classList.remove('active');
+      } 
+    });
+    saveChangesButton.addEventListener('click', async () => {
+      // Store the values for your semester class credits and gpa scores "temporarily" (this object will replace the object at window.semesters if the input is good)
+      const tmp = {};
+      const gpaData = config.gpa ?? {};
+      for (const course of allCourses) {
+        const courseID = course.id;
+        const credits = document.querySelector(`.row-${courseID}.credits > input`).value.trim();
+        const select = document.querySelector(`.row-${courseID}.grade > select`);
+        const letterGrade = select.options[select.selectedIndex].textContent;
+        const courseGpa = gpaStandard[letterGrade] ?? null;
+        // Check if the data that was inputted is "bad"
+        if (!/^\d+$/.test(credits) || Number(credits) < 0) {  
+          saveChangesLabel.classList.add('error');
+          saveChangesLabel.textContent = 'Changes failed to save! Please use numerical values \u2265 0 for your credits';
+          return;
+        }
+        if (Number(credits) !== 0 && letterGrade === '') {
+          saveChangesLabel.classList.add('error');
+          saveChangesLabel.textContent = 'Changes failed to save! Please provide a grade for all of your courses';
+          return;
+        }
+        if (course.term !== undefined && !badTermNames.includes(course.term.name)) {
+          if (tmp[course.term.id] === undefined) {
+            tmp[course.term.id] = [course.term.name, 0, 0];
+          }
+          tmp[course.term.id][1] += Number(credits);
+          tmp[course.term.id][2] += Number(credits) * Number(courseGpa);
+        }
+        gpaData[courseID] = { credits, letter_grade: letterGrade };
+      }
+      // Processing was completed without finding any errors, so configure the label for a successful operation
+      saveChangesLabel.classList.remove('error');
+      saveChangesLabel.textContent = 'Changes saved successfully!';
+      window.semesters = tmp;
+      await saveConfig(gpaData, 'gpa');
+      await calculateGpa(false);
+      setTimeout(() => {
+        saveChangesLabel.textContent = '';
+      }, 3000);
+    });
+    // Calculate the GPA for the student
+    const calculateGpa = async function(initialCall = false) {
+      let creditTotal = 0;
+      let gpaTotal = 0;
+      window.semesters = {};
+      window.currentTermCredits = [];
+      window.gpaErrorMessage = '';
+      window.gpaBadCourses = new Set();
+      // Get the max letter grade (grade associated with the highest gpa) for usage with courses that have no grade
+      const gpaStandardGrades = Object.keys(gpaStandard);
+      let maxLetterGrade = gpaStandardGrades[0];
+      for (const letterGrade of gpaStandardGrades) {
+        // If the GPA's associated with the two current letter grades are not equal, then compare them
+        if (gpaStandard[letterGrade] !== gpaStandard[maxLetterGrade]) {
+          maxLetterGrade = gpaStandard[letterGrade] > gpaStandard[maxLetterGrade] ? letterGrade : maxLetterGrade;
+          continue;
+        }
+        // If they are equal, then compare the letter grade representations (while considering plus and minus signs)
+        maxLetterGrade = (maxLetterGrade + ',').localeCompare(letterGrade + ',') > 1 ? maxLetterGrade : letterGrade;
+      }
+      for await (const course of allCourses) {
+        // Configure the semesters object (to store gpa data on each semester)
+        if (course.term !== undefined && !badTermNames.includes(course.term.name) && window.semesters[course.term.id] === undefined) {
+          window.semesters[course.term.id] = [course.term.name, 0, 0];
+        }
+        const courseConfig = config[course.id] ?? {};
+        const classGradingStandard = course.grading_standard_id !== null ? (await retrieveGradingStandard(course.id, course.grading_standard_id)) : null;
+        if (course.term?.id === currentSemesterId) {
+          window.currentTermCredits.push(Number(config.gpa[course.id]?.credits ?? -1));
+        }
+        // Store flag for detecting if the current course is using "AUTO" and is a current term course
+        let autoFlag = false;
+        // Use a IIFE to compute the letter grade for a given course if the grade is in computed grades "cache" or in chrome storage
+        const letterGrade = (function() {
+          const tmp = config.gpa[course.id]?.letter_grade ?? '';
+          if ((tmp === 'AUTO' || tmp === '') && course.term?.id === currentSemesterId) {
+            autoFlag = true;
+            return null;
+          }
+          // If this executes, this means that grade is bad "AUTO" (not a course in the current term)
+          if (tmp === 'AUTO') {
+            return null;
+          }
+          // In the final base case, tmp is either '' (blank) or set
+          return tmp === '' ? null : tmp;
+        })() ?? await (async function() {
+          const grade = window.computedGrades[course.id.toString()]?.[0] ?? (await getCourseGrade(course, courseConfig, null, null, false))[0];
+          if (grade === 'NG' && !autoFlag) {
+            return null; 
+          }
+          const tmpLetterGrade = await getLetterGrade(courseConfig.grading_standard ?? classGradingStandard ?? config.default_grading_standard ?? default_grading_standard, grade) ?? null;
+          // If there is no calculated grade but the grade is set to "AUTO", then use the max grade available. 
+          // If the letter grade could not be computed, use null, or else just use the computed letter grade
+          return tmpLetterGrade === null ? maxLetterGrade : (tmpLetterGrade === 'N/A' ? null : tmpLetterGrade);
+        })() ?? '';
+        const courseGpa = gpaStandard[letterGrade] ?? null;
+        const credits = config.gpa[course.id]?.credits ?? null;
+        // On the initial case (for page load, replace any blank grades and any invalid "AUTO" grades with the manually calculated grade)
+        if (initialCall && !autoFlag) {
+          config.gpa[course.id].letter_grade = letterGrade ?? '';
+        } 
+        if (Number(credits) !== 0 && courseGpa === null && autoFlag) {
+          // Add missing grades to the set (used for informing the user of missing letter grades)
+          window.gpaBadCourses.add(letterGrade);
+          window.semesters[course.term.id][1] = -1;
+        }
+        if (Number(credits) !== 0 && (letterGrade === '' || courseGpa === null)) {
+          window.gpaErrorMessage = 'Grade is unknown for some courses';
+          // If the course is a valid course, then mark the semester for the course as invalid for grades
+          window.semesters[course.term.id][1] = -1;
+          continue;
+        }
+        document.querySelector(`.row-${course.id} option[class="${autoFlag ? 'AUTO' : (courseGpa === null ? 'blank' : letterGrade)}"]`).selected = true;
+        // If the course is an valid course with credits that haven't been set, then mark the semester for the course as invalid and set the error message
+        if (course.term !== undefined && credits === null) {
+          window.gpaErrorMessage = 'Credit count is unknown for some courses';
+          window.semesters[course.term.id][1] = -1;
+          continue;
+        }
+        creditTotal += Number(credits);
+        gpaTotal += Number(courseGpa) * Number(credits);
+        if (course.term !== undefined && (window.semesters[course.term.id] ?? [-1,-1])[1] !== -1) {
+          window.semesters[course.term.id][1] += Number(courseGpa) * Number(credits);
+          window.semesters[course.term.id][2] += Number(credits);
+        }
+      }
+      // For this, we will be truncating at two decimal places (UMD uses 3 decimal truncation)
+      const cumulativeGpa = (Math.floor(1e3 * gpaTotal / creditTotal) / 1e3).toFixed(3);
+      // Get the gpa for the term selected in the current term dropdown
+      const selectedSemesterData = window.semesters[window.semesterDropdownValue ?? currentSemesterId];
+      // Calculate the gpa without the current/most recent semester
+      const cumulativeGpaAlt = (Math.floor(1e3 * (gpaTotal - window.semesters[currentSemesterId][1]) / (creditTotal - window.semesters[currentSemesterId][2])) / 1e3).toFixed(3);
+      const badGpaFlag = isNaN(cumulativeGpa) || window.gpaErrorMessage !== '';
+      // Store the cumulative gpa with the current semester and without the current semester
+      window.currentSemesterGpa = badGpaFlag ? ['⚠️','⚠️'] : [cumulativeGpa, cumulativeGpaAlt] // [gpa WITH current sem, gpa WITHOUT current sem]
+      gpaCumulativeValue.textContent = badGpaFlag ? '⚠️' : window.currentSemesterGpa[gpaCumulativeCheckbox.checked ? 0 : 1];
+      gpaCalculatorEditConfig.textContent = badGpaFlag ? 'Edit GPA Config ⚠️' : 'Edit GPA Config';
+      gpaCumulativeError.textContent = window.gpaErrorMessage;
+      gpaSemesterValue.textContent = selectedSemesterData[1] === -1 ? '⚠️' : (Math.floor(1e3 * selectedSemesterData[1] / selectedSemesterData[2]) / 1e3).toFixed(3);
+      gpaSemesterError.textContent = selectedSemesterData[1] === -1 ? `${window.gpaErrorMessage.startsWith('Grade') ? 'Grade' : 'Credit count'} is unknown for some "${selectedSemesterData[0]}" courses` : '';
+      // If there are grades that are missing from the gpa mapping, then check the following conditions:
+      // If the selected semester is the current term OR if the cumulative GPA is including the current term, then reveal the missing grades in an error message (override any other existing error message)
+      if (window.gpaBadCourses.size !== 0) {
+        // Check if the error message should display for the term gpa
+        if (selectedSemesterData[0] === currentSemesterName) {
+          gpaSemesterError.textContent = `GPA standard is missing the following grades: ${[...window.gpaBadCourses].join(', ')}`;
+        }
+        // Check if the error message should display for the cumulative gpa
+        if (gpaCumulativeCheckbox.checked) {
+          gpaCumulativeError.textContent = `GPA standard is missing the following grades: ${[...window.gpaBadCourses].join(', ')}`;
+        }
+      }
+      if (initialCall) {
+        await saveConfig(config.gpa, 'gpa');
+      }
+    }
+    await calculateGpa(true);
+    // Show the gpa card after it has been fully configured
+    gpaCard.style.display = '';
+  });
 } else if (/courses\/\d+\/grades/.test(window.location.href)) { // Course grades page
   // Check if the page is valid (if the page is an actual courses' grade page)
   if (document.getElementById('not_found_root') !== null) {
@@ -927,7 +2108,8 @@ if (document.title === 'Dashboard') {
       config.grading_standard = grading_standard;
       await saveConfig(config, courseID);
       if (setDefaultGradingStandard.checked) {
-        await saveConfig({ default_grading_standard: grading_standard }, null);
+        // await saveConfig({ default_grading_standard: grading_standard }, null);
+        await saveConfig(grading_standard, 'default_grading_standard');
       }
       // Update letter grade for the grade display (no grade recalculations required - percentages are stored in window.courseGrades as an array [you, q1, q2, q3, mean])
       await updateGradeDisplay(window.courseGrades);
@@ -1008,7 +2190,7 @@ if (document.title === 'Dashboard') {
         dropsTable.style.display = 'inline-table';
         setDrops.style.display = 'none';
         saveDrops.style.display = 'flex';
-        viewDrops.style.dispaly = 'none';
+        viewDrops.style.display = 'none';
         resetDropsContainer.style.display = 'inline';
         window.dropsMode = 'set';
         return;
@@ -1030,7 +2212,8 @@ if (document.title === 'Dashboard') {
         lowDropsInput.maxLength = 2;
         lowDropsInput.style.width = '15%';
         lowDropsInput.style.marginBottom = 0;
-        lowDropsInput.style.marginRight= '10px';
+        lowDropsInput.style.marginRight = '10px';
+        lowDropsInput.style.textAlign = 'center';
         lowDropsInput.value = +dropsCell.dataset.low_drops;
         lowDropsInput.id = 'low_drops_input_' + marker;
         highDropsInput.type = 'text';
@@ -1040,6 +2223,7 @@ if (document.title === 'Dashboard') {
         highDropsInput.maxLength = 2;
         highDropsInput.style.width = '15%';
         highDropsInput.style.marginBottom = 0;
+        highDropsInput.style.textAlign = 'center';
         highDropsInput.value = +dropsCell.dataset.high_drops;
         highDropsInput.id = 'high_drops_input_' + marker;
         inputsContainer.style.marginBottom = '10px';
@@ -1314,7 +2498,7 @@ if (document.title === 'Dashboard') {
     const updateGradeDisplay = async function(grades, whatIfScores = null) {
       const gradesText = document.querySelectorAll('.student_assignment.final_grade');
       if (grades === null) {
-        grades = await getCourseGrade(course, config, courseAssignments, whatIfScores);
+        grades = await getCourseGrade(course, config, courseAssignments, whatIfScores, true);
       }
       // gradesArr = [your grade, q1, q2, q3, mean]
       const gradesArr = await Promise.all(grades.slice(0,5).map(async grade => {
@@ -1329,7 +2513,7 @@ if (document.title === 'Dashboard') {
       const gradesList = [null,'Lower Quartile','Median','Upper Quartile','Mean'];
       window.courseGrades = grades; // response: [you, q1, q2, q3, mean, low, high] {grades are provided in an array of length 7}
       gradesText.forEach(grade => {
-        if (grade.id === '') {
+        if (grade.nodeName === 'DIV') {
           // Right side grade display
           const gradeStatisticsContainer = document.createElement('div');
           let marker = 0;
@@ -1349,7 +2533,7 @@ if (document.title === 'Dashboard') {
               const percentile = calculatePercentile(gradesArr[1].grade, gradesArr[2].grade, gradesArr[3].grade, gradesArr[0].grade, low, high);
               // Set the top percentile text and style it
               const topPercentile = document.createElement('span');
-              topPercentile.textContent = percentile !== null ? `[Top ${Math.round(1e4 - (100 * percentile)) / 100}%]` : '[N/A]';
+              topPercentile.textContent = percentile !== null && !isNaN(percentile) ? `[Top ${Math.round(1e4 - (100 * percentile)) / 100}%]` : '[Top: N/A]';
               topPercentile.style.fontSize = '80%';
               topPercentile.style.marginLeft = '.75vw';
               topPercentile.style.fontWeight = 900;
@@ -1425,10 +2609,10 @@ if (document.title === 'Dashboard') {
             grade.insertAdjacentElement('afterend', toggleGradeStatistics);
             gradeStatisticsDisplay(false);
           }
-        } else {
+        } else if (grade.nodeName === 'TR') {
           // Set table grade display
           const gradeCell = grade.querySelector('span.tooltip span');
-          gradeCell.textContent = `${gradesArr[0].grade}% (${gradesArr[0].letterGrade})`;
+          gradeCell.textContent = gradesArr[0].grade === 'NG' ? 'N/A' : `${gradesArr[0].grade}% (${gradesArr[0].letterGrade})`;
           // Remove the "grade" class so that Canvas cannot interact with the grade display
           gradeCell.classList.remove('grade');
           // Update points display
@@ -1534,7 +2718,7 @@ if (document.title === 'Dashboard') {
 
     closeButton.addEventListener('click', togglePopup);
     window.addEventListener('keydown', event => {
-      if (event.key === 'Escape') {
+      if (popup.classList.contains('active') && event.key === 'Escape') {
         popup.classList.remove('active');
       } 
     });
@@ -1869,7 +3053,6 @@ if (document.title === 'Dashboard') {
         console.error(`An error has occured when calculating the course grade for ${course.course_code}`, err);
       }
     }
-
     // TODO Modify this so that these that buttons are added earlier with the mutation observer
     const detailsCells = document.getElementById('grades_summary').querySelectorAll('tbody tr:not(.hard_coded) td.details');
     const ungradedAssignment = detailsCells.length !== 0;
@@ -1900,7 +3083,7 @@ if (document.title === 'Dashboard') {
     }
 
     calculateButton.addEventListener('click', calculateMinGrade);
-    desiredGradeInput.addEventListener('keydown', (event) => {
+    desiredGradeInput.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
         calculateMinGrade();
       }
@@ -1910,7 +3093,6 @@ if (document.title === 'Dashboard') {
     await updateGradeDisplay(null, window.previousGradeConfig);
   });
 }
-
 // TODO Confirm that this is working properly and that there are no errors / failure cases
 // Calculate the percentile that your grade lies in (this is an approximate value and will not be entirely correct due to the lack of data)
 const calculatePercentile = function(q1, q2, q3, grade, low, high) {
@@ -1953,10 +3135,12 @@ const calculatePercentile = function(q1, q2, q3, grade, low, high) {
  * If any config is set, then the grade is calculated manually
  * if their is no weighting, then the grade is calculated manually
  * whatIfScores: null / Dictionary / "DOM"
+ * getCourseStats: boolean (determining whether or not the course statistic grades will be calculated)
  */
-// TODO Add logic for skipping assignment groups that have a weighting of 0 (unnecessary processing)
-// TODO Make a special mode that calculates the class statistics grades (only needs to be done for the initial computation on the course page)
-const getCourseGrade = async function(course, config, groups, whatIfScores = null) {
+const getCourseGrade = async function(course, config, groups, whatIfScores, getCourseStatistics) {
+  if (course.workflow_state === 'unpublished') {
+    return ['NG'].concat(new Array(6).fill(-1));
+  }
   // If the assignment groups have not been provided, then fetch them and update the groups variable
   if (groups === null) {
     groups = await (await fetch(`/api/v1/courses/${course.id}/assignment_groups?include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission`, {
@@ -1983,26 +3167,28 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       let statsGroupTotal = 0;
       map[group.name] = {};
       groupMap[group.id] = group.name;
-      map[group.name].q1 = {};
-      map[group.name].q1.score = 0;
-      map[group.name].q1.grades = new Array();
-      map[group.name].q2 = {}; // q2 = median
-      map[group.name].q2.score = 0;
-      map[group.name].q2.grades = new Array();
-      map[group.name].q3 = {};
-      map[group.name].q3.score = 0;
-      map[group.name].q3.grades = new Array();
-      map[group.name].mean = {};
-      map[group.name].mean.score = 0;
-      map[group.name].mean.grades = new Array();
-      map[group.name].low = {};
-      map[group.name].low.score = 0;
-      map[group.name].low.grades = new Array();
-      map[group.name].high = {};
-      map[group.name].high.score = 0;
-      map[group.name].high.grades = new Array();
       map[group.name].weight = is_course_unweighted ? 1 : (!isObjectEmpty(config.weights) ? config.weights[group.name] : group.group_weight);
       map[group.name].grades = new Array();
+      if (getCourseStatistics) {
+        map[group.name].q1 = {};
+        map[group.name].q1.score = 0;
+        map[group.name].q1.grades = new Array();
+        map[group.name].q2 = {}; // q2 = median
+        map[group.name].q2.score = 0;
+        map[group.name].q2.grades = new Array();
+        map[group.name].q3 = {};
+        map[group.name].q3.score = 0;
+        map[group.name].q3.grades = new Array();
+        map[group.name].mean = {};
+        map[group.name].mean.score = 0;
+        map[group.name].mean.grades = new Array();
+        map[group.name].low = {};
+        map[group.name].low.score = 0;
+        map[group.name].low.grades = new Array();
+        map[group.name].high = {};
+        map[group.name].high.score = 0;
+        map[group.name].high.grades = new Array();
+      }
       for (const assignment of group.assignments) {
         // Do not include assignments that are not counted towards your final grade (also don't include assignments that have not been graded)
         // Don't consider missing/ungraded assignments if the gradedAssignmentsOnly checkbox is ticked or if there isn't a what-if score
@@ -2021,7 +3207,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
         // TODO change this so that if the score is null, it is treated as a 0 if the gradedAssignmentsOnly checkbox is not ticked (this means that missing assignments are considered)
         const score = whatIfScores === 'DOM' ? getWhatIfGrade(assignment) : whatIfScores?.[assignment.id] ?? assignment.submission.score ?? (!gradedAssignmentsOnly ? 0 : null);
         // Skip this assignment if the score is null
-        if (score === null) {
+        if (score === null || score === undefined) {
           continue;
         }
         map[group.name].grades.push({
@@ -2029,7 +3215,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
           score,
           total,
         });
-        if (statistics !== undefined) {
+        if (getCourseStatistics && statistics !== undefined) {
           // Add grade to the list of grades for each stat
           map[group.name].q1.grades.push({
             score: statistics.lower_q,
@@ -2070,20 +3256,22 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       // Update map with computed values for the current group
       map[group.name].score = groupScore;
       map[group.name].total = groupTotal;
-      map[group.name].statsTotal = statsGroupTotal;
       map[group.name].decimal = groupTotal === 0 ? 0 : groupScore / groupTotal;
-      map[group.name].q1.total = statsGroupTotal;
-      map[group.name].q2.total = statsGroupTotal;
-      map[group.name].q3.total = statsGroupTotal;
-      map[group.name].mean.total = statsGroupTotal;
-      map[group.name].low.total = statsGroupTotal;
-      map[group.name].high.total = statsGroupTotal;
-      map[group.name].q1.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q1.score / statsGroupTotal;
-      map[group.name].q2.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q2.score / statsGroupTotal;
-      map[group.name].q3.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q3.score / statsGroupTotal;
-      map[group.name].mean.decimal = statsGroupTotal === 0 ? 0 : map[group.name].mean.score / statsGroupTotal;
-      map[group.name].low.decimal = statsGroupTotal === 0 ? 0 : map[group.name].low.score / statsGroupTotal;
-      map[group.name].high.decimal = statsGroupTotal === 0 ? 0 : map[group.name].high.score / statsGroupTotal;
+      if (getCourseStatistics) {
+        map[group.name].statsTotal = statsGroupTotal;
+        map[group.name].q1.total = statsGroupTotal;
+        map[group.name].q2.total = statsGroupTotal;
+        map[group.name].q3.total = statsGroupTotal;
+        map[group.name].mean.total = statsGroupTotal;
+        map[group.name].low.total = statsGroupTotal;
+        map[group.name].high.total = statsGroupTotal;
+        map[group.name].q1.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q1.score / statsGroupTotal;
+        map[group.name].q2.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q2.score / statsGroupTotal;
+        map[group.name].q3.decimal = statsGroupTotal === 0 ? 0 : map[group.name].q3.score / statsGroupTotal;
+        map[group.name].mean.decimal = statsGroupTotal === 0 ? 0 : map[group.name].mean.score / statsGroupTotal;
+        map[group.name].low.decimal = statsGroupTotal === 0 ? 0 : map[group.name].low.score / statsGroupTotal;
+        map[group.name].high.decimal = statsGroupTotal === 0 ? 0 : map[group.name].high.score / statsGroupTotal;
+      }
     }
     // Remove 'dropped' class from all rows that currently have it (re-apply the 'dropped' class manually)
     document.querySelectorAll('#grades_summary .dropped').forEach(assignment => assignment.classList.remove('dropped'));
@@ -2094,7 +3282,6 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       if (lowDrops === 0 && highDrops === 0) {
         continue;
       }
-      // TODO Confirm that this sorting approach works properly 
       // Sort the assignments by simulating the grade after dropping the current assignment (higher grade after drop is placed earlier)
       map[group.name].grades.sort((a,b) => {
         const dec_a = (map[group.name].score - a.score) / (map[group.name].total - a.total);
@@ -2102,7 +3289,6 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
         return dec_b - dec_a;
       });
       // Create a set of the assignments that should not be dropped
-      // TODO Store the assignments that are ignored due to dropped if needed in the future
       const neverDrop = new Set(group.rules.never_drop ?? []);
       // Perform the low drops
       for (let i = 0; i < lowDrops; i++) {
@@ -2156,9 +3342,9 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
     for (const row of groupTotals) {
       const groupID = RegExp(/\d+/).exec(row.id)[0];
       const groupName = groupMap[groupID];
-      const groupScore = (+map[groupName].score.toLocaleString('en-US')).toFixed(2);
-      const groupTotal = (+map[groupName].total.toLocaleString('en-US')).toFixed(2);
-      const groupPercentage = Math.round(1e4 * map[groupName].decimal) / 1e2;
+      const groupScore = groupName === undefined ? '0.00' : (+map[groupName].score.toLocaleString('en-US')).toFixed(2);
+      const groupTotal = groupName === undefined ? '0.00' : (+map[groupName].total.toLocaleString('en-US')).toFixed(2);
+      const groupPercentage = groupName === undefined ? 0 : Math.round(1e4 * map[groupName].decimal) / 1e2;
       // Change the text while also removing the child of these elements, thus severing cell from any Canvas-enforced updates
       row.querySelector('span.tooltip').textContent = groupTotal === '0.00' ? 'N/A' : groupPercentage + '%';
       row.querySelector('td.details').textContent = `${groupScore} / ${groupTotal}`;
@@ -2172,8 +3358,8 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
         // Compute score and total for your grade
         completeScore += map[group.name].score;
         completeTotal += map[group.name].total;
-        // If the statsTotal is 0, then don't continue to compute this group
-        if (map[group.name].statsTotal === 0) {
+        // If the statsTotal is 0 or if we are not calculating the course statistics, then finish computing the current group
+        if (!getCourseStatistics || map[group.name].statsTotal === 0) {
           continue;
         }
         // Compute the score and total for the class statistics
@@ -2217,7 +3403,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores = nul
       // Keep track of the total weight being used for your grade
       weightTotal += map[group.name].weight;
         // If the statsTotal is 0, then don't continue to compute this group
-      if (map[group.name].statsTotal === 0) {
+      if (!getCourseStatistics || map[group.name].statsTotal === 0) {
         continue;
       }
       // Keep track of the total weight being used for the class statistics
@@ -2284,21 +3470,12 @@ const getLetterGrade = async function(gradingStandard, grade) {
 
 const retrieveGradingStandard = async function(courseID, gradingStandardID) {
   const grading_standard = (await (await fetch(`/api/v1/courses/${courseID}/grading_standards/${gradingStandardID}`)).json()).grading_scheme;
+  if (grading_standard === undefined) {
+    return null;
+  }
   const grading_standard_map = {};
   for (const {name,value} of grading_standard) {
     grading_standard_map[100*value] = name;
   }
   return grading_standard_map;
-}
-
-const saveConfig = async function(config, courseID) {
-  // If the config that is being updated is global, then just update that individual property and you're done
-  // Global config: courseID = null
-  if (courseID === null) {
-    // config format -> { key : value }
-    await chrome.storage.local.set(config);
-    return;
-  }
-  // Or else the config is class specific, which means that you have to update it using the courseID
-  await chrome.storage.local.set({ [courseID] : config});
 }
