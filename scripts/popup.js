@@ -11,6 +11,8 @@ const textColor = document.getElementById(`text_color${isFirefox ? '_firefox' : 
 const backgroundColor = document.getElementById(`background_color${isFirefox ? '_firefox' : ''}`);
 const overlayShowLetterGrade = document.getElementById('dashboard_letter_grade'); 
 const showOverlay = document.getElementById('dashboard_grade');
+const showGpaCard = document.getElementById('gpa_card');
+const gpaCardPosition = document.getElementById('gpa_card_position');
 const gradesPageShowClassStats = document.getElementById('show_class_statistics');
 const gradesPageShowDrops = document.getElementById('show_drops');
 const gradesPageShowGradingStandard = document.getElementById('show_grading_standard');
@@ -24,7 +26,8 @@ const messageInput = document.getElementById('message');
 const linksContainer = document.getElementById('links');
 const webhookURL = 'https://zingy-moonbeam-a2a551.netlify.app/.netlify/functions/api';
 const globalConfig = {};
-const config = {};
+const gradeOverlayConfig = {};
+const gpaCardConfig = {};
 
 const hideMessageLabel = function() {
   sendMessageLabel.style.visibility = 'hidden';
@@ -123,24 +126,27 @@ saveChanges.addEventListener('click', async () => {
       return;
     }
   }
-  config.text_color = isFirefox ? textColor.dataset.currentColor :  textColor.value;
-  config.background_color = isFirefox ? backgroundColor.dataset.currentColor : backgroundColor.value;
-  config.font_style = fontStyleDropdown.value;
-  config.show_letter_grade = overlayShowLetterGrade.checked;
-  config.show_overlay = showOverlay.checked;
+  gradeOverlayConfig.text_color = isFirefox ? textColor.dataset.currentColor : textColor.value;
+  gradeOverlayConfig.background_color = isFirefox ? backgroundColor.dataset.currentColor : backgroundColor.value;
+  gradeOverlayConfig.font_style = fontStyleDropdown.value;
+  gradeOverlayConfig.show_letter_grade = overlayShowLetterGrade.checked;
+  gradeOverlayConfig.show_overlay = showOverlay.checked;
   // Only save custom font if the custom font provided is not null
   await validateCustomFont();
   if (window.customFont !== null) {
-    config.custom_font = customFont.value.trim();
+    gradeOverlayConfig.custom_font = customFont.value.trim();
     gradeOverlay.style.fontFamily = window.customFont;
   }
-  config.use_custom_font = customFontCheckbox.checked;
+  gradeOverlayConfig.use_custom_font = customFontCheckbox.checked;
+  gpaCardConfig.show_card = showGpaCard.checked;
+  gpaCardConfig.position = gpaCardPosition.value;
   globalConfig.class_statistics_default_view = gradesPageShowClassStats.checked;
   globalConfig.grading_standard_default_view = gradesPageShowGradingStandard.checked;
   globalConfig.drops_default_view = gradesPageShowDrops.checked;
   try {
-    await chrome.storage.local.set(globalConfig)
-    await chrome.storage.local.set({ grade_overlay: config });
+    await chrome.storage.local.set(globalConfig);
+    await chrome.storage.local.set({ gpa_card: gpaCardConfig });
+    await chrome.storage.local.set({ grade_overlay: gradeOverlayConfig });
   } catch (err) {
     saveChangesLabel.style.visibility = 'visible';
     saveChangesLabel.style.color = 'red';
@@ -199,6 +205,7 @@ linksContainer.lastElementChild.addEventListener('click', () => chrome.tabs.crea
 document.addEventListener('DOMContentLoaded', async () => {
   const obj = await chrome.storage.local.get();
   const overlayConfig = obj.grade_overlay ?? {};
+  const cardConfig = obj.gpa_card ?? {};
   // Set popup border color using primary color (same color as Canvas)
   document.body.style.backgroundColor = obj.primary_color ?? '#990000';
   // Display alternative color inputs if firefox is the current browser (normal color input closes the input for firefox)
@@ -234,8 +241,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   gradesPageShowClassStats.checked = globalConfig.class_statistics_default_view = obj.class_statistics_default_view ?? true;
   gradesPageShowGradingStandard.checked = globalConfig.grading_standard_default_view = obj.grading_standard_default_view ?? true;
   gradesPageShowDrops.checked = globalConfig.drops_default_view = obj.drops_default_view ?? true;
+  // Configure the gpa card settings
+  showGpaCard.checked = cardConfig.show_card ?? true; // GPA card display checkbox
+  gpaCardPosition.value = cardConfig.position ?? 'first'; // GPA card position dropdown (possible values are 'first', 'last')
   // Copy overlay config to config variable
-  Object.assign(config, overlayConfig);
+  Object.assign(gradeOverlayConfig, overlayConfig);
+  Object.assign(gpaCardConfig, cardConfig);
   for (const fontStyleOption of fontStyleDropdown.children) {
     fontStyleOption.style.fontFamily = fontStyleOption.textContent;
   }
@@ -289,7 +300,6 @@ const updateGradeOverlay = async function(change) {
     if (customFontCheckbox.checked) {
       await configureCustomFont();
     }
-    console.log(customFontCheckbox.checked, window.customFont);
     fontStyleDropdown.style.fontFamily = fontStyleDropdown.value;
     gradeOverlay.style.fontFamily = window.customFont ?? fontStyleDropdown.value;
     gradeOverlay.style.color = isFirefox ? textColor.dataset.currentColor : textColor.value;

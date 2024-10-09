@@ -247,8 +247,36 @@ if (document.title === 'Dashboard') {
     // Listen for updating grade overlays when the settings are updated using the popup
     chrome.storage.onChanged.addListener(async (changes, _namespace) => {
       for await (const [key, { newValue: config }] of Object.entries(changes)) {
-        // If the storage update was not for the grade overlay, then ignore it
-        if (key !== 'grade_overlay') {
+        // If the storage update was not for the grade overlay OR not for the gpa card, then ignore it
+        if (key !== 'grade_overlay' && key !== 'gpa_card') {
+          continue;
+        }
+        // If the storage update was for the gpa card, then handle that then exit
+        if (key === 'gpa_card') {
+          // code here
+          // Check if the gpa card is being hidden
+          const gpaCard = document.querySelector('.ic-DashboardCard:has(> #canvas-grades-pro-gpa-calculator)');
+          if (gpaCard === null) {
+            console.error('GPA card does not exist');
+          }
+          const hidingCard = config.show_card === false;
+          // If we are hiding the gpa card, then set the display to none before continuing
+          if (hidingCard) {
+            gpaCard.style.display = 'none';
+            continue;
+          }
+          // Or else reset the display to the original
+          gpaCard.style.display = '';
+          const currentState = gpaCard.previousElementSibling === null ? 'first' : 'last';
+          // If the current position of the gpa card is what is being set, then do nothing
+          if (currentState === config.position) {
+            continue;
+          }
+          if (config.position === 'first') {
+            gpaCard.parentElement.prepend(gpaCard);
+          } else if (config.position === 'last') {
+            gpaCard.parentElement.appendChild(gpaCard);
+          }
           continue;
         }
         // Get all of the grade overlays
@@ -407,6 +435,12 @@ if (document.title === 'Dashboard') {
         font-weight: bold;
         margin-bottom: 4px;
         color: #333;
+      }
+
+      .credits-value {
+        font-size: .7rem;
+        margin-top: -.7rem;
+        font-family: Trebuchet MS, sans-serif;
       }
 
       #gpa-semester-subcontainer, #gpa-cumulative-subcontainer {
@@ -584,6 +618,9 @@ if (document.title === 'Dashboard') {
     gpaCumulativeTitle.textContent = 'Cumulative GPA';
     const gpaCumulativeValue = document.createElement('div');
     gpaCumulativeValue.classList.add('gpa-value');
+    const cumulativeCreditsValue = document.createElement('div');
+    cumulativeCreditsValue.classList.add('credits-value');
+    cumulativeCreditsValue.textContent = '-';
     if (config.gpa_config?.gpa_view === false) {
       gpaCumulativeValue.classList.add('blurred');
     }
@@ -632,6 +669,7 @@ if (document.title === 'Dashboard') {
     const gpaCumulativeContainer = document.createElement('div');
     gpaCumulativeContainer.appendChild(gpaCumulativeTitle);
     gpaCumulativeContainer.appendChild(gpaCumulativeValue);
+    gpaCumulativeContainer.appendChild(cumulativeCreditsValue);
     gpaCumulativeContainer.appendChild(gpaCumulativeError);
     const gpaSemesterContainer = gpaCumulativeContainer.cloneNode(true);
     const gpaSemesterTitle = gpaSemesterContainer.firstElementChild;
@@ -647,6 +685,8 @@ if (document.title === 'Dashboard') {
     gpaCumulativeTitle.insertAdjacentElement('afterend', gpaCumulativeSubContainer);
     gpaSemesterTitle.insertAdjacentElement('afterend', gpaSemesterSubContainer);
     const gpaSemesterValue = gpaSemesterContainer.querySelector('.gpa-value');
+    const semesterCreditsValue = gpaSemesterContainer.querySelector('.credits-value');
+    semesterCreditsValue.textContent = '-';
     const gpaSemesterError = gpaSemesterContainer.lastElementChild;
     gpaSemesterTitle.textContent = 'Term GPA';
     gpaSemesterValue.textContent = '-';
@@ -708,8 +748,12 @@ if (document.title === 'Dashboard') {
       coursesPage++;
     }
     let gpaStandard = config.default_gpa_standard ?? default_gpa_standard;
-    // TODO Modify this so that the user can set a preference for adding the gpa card to the end of the dashboard card list
-    document.querySelector('.ic-DashboardCard__box__container').prepend(gpaCard);
+    // Consider the user preference for adding the gpa card to the beginning or end of the dashboard card container
+    if ((config.gpa_card?.position ?? 'first') === 'first') {
+      document.querySelector('.ic-DashboardCard__box__container').prepend(gpaCard);
+    } else {
+      document.querySelector('.ic-DashboardCard__box__container').appendChild(gpaCard);
+    }
     // Create popup for editing the configuration for the gpa calculator
     const popup = document.createElement('div');
     const overlay = document.createElement('div');
@@ -760,7 +804,7 @@ if (document.title === 'Dashboard') {
       if (a_term_id != b_term_id) {
         return b_term_id - a_term_id;
       }
-      return a.course_code.localeCompare(b.course_code);
+      return a.course_code === undefined ? 1 : (b.course_code === undefined ? -1 : a.course_code.localeCompare(b.course_code));
     });
     // Try to get the current semester id (get the maximum semester id)
     let currentSemesterId = -1;
@@ -1172,6 +1216,8 @@ if (document.title === 'Dashboard') {
     gpaCumulativeCheckbox.addEventListener('change', async () => {
       // Switch between the two different grades that are computed (grade with current semester and grade without current semester)
       gpaCumulativeValue.textContent = window.currentSemesterGpa[gpaCumulativeCheckbox.checked ? 0 : 1];
+      const tmp = window.currentCredits[gpaCumulativeCheckbox.checked ? 0 : 1];
+      cumulativeCreditsValue.textContent = tmp === '' ? '' : `${tmp} Credits`;
       if (config.gpa === undefined) {
         config.gpa = {};
       }
@@ -1189,6 +1235,7 @@ if (document.title === 'Dashboard') {
         gpaSemesterEditIcon.classList.replace('fa-save', 'fa-edit');
         const selectedSemesterData = window.semesters[window.semesterDropdownValue];
         gpaSemesterValue.textContent = selectedSemesterData[1] === -1 ? '⚠️' : (Math.floor(1e3 * selectedSemesterData[1] / selectedSemesterData[2]) / 1e3).toFixed(3);
+        semesterCreditsValue.textContent = selectedSemesterData[1] === -1 ? '' : selectedSemesterData[2] + ' Credits'
         gpaSemesterError.textContent = selectedSemesterData[1] === -1 ? `Credit count is unknown for some ${selectedSemesterData[0]} courses` : '';
       } else { // Editing mode
         const dropdown = semestersDropdown.cloneNode(true);
@@ -1357,15 +1404,18 @@ if (document.title === 'Dashboard') {
       const cumulativeGpa = (Math.floor(1e3 * gpaTotal / creditTotal) / 1e3).toFixed(3);
       // Get the gpa for the term selected in the current term dropdown
       const selectedSemesterData = window.semesters[window.semesterDropdownValue ?? currentSemesterId];
-      // Calculate the gpa without the current/most recent semester
-      const cumulativeGpaAlt = (Math.floor(1e3 * (gpaTotal - window.semesters[currentSemesterId][1]) / (creditTotal - window.semesters[currentSemesterId][2])) / 1e3).toFixed(3);
+      // Calculate the gpa without the current/most recent semester (if the student has no courses prior to the current semester, then display N/A)
+      const cumulativeGpaAlt = (creditTotal - window.semesters[currentSemesterId][2]) === 0 ? 'N/A' : (Math.floor(1e3 * (gpaTotal - window.semesters[currentSemesterId][1]) / (creditTotal - window.semesters[currentSemesterId][2])) / 1e3).toFixed(3);
       const badGpaFlag = isNaN(cumulativeGpa) || window.gpaErrorMessage !== '';
       // Store the cumulative gpa with the current semester and without the current semester
       window.currentSemesterGpa = badGpaFlag ? ['⚠️','⚠️'] : [cumulativeGpa, cumulativeGpaAlt] // [gpa WITH current sem, gpa WITHOUT current sem]
+      window.currentCredits = badGpaFlag ? ['',''] : [creditTotal, creditTotal - window.semesters[currentSemesterId][2]]; // [credits WITH current sem, credits WITHOUT current sem]
       gpaCumulativeValue.textContent = badGpaFlag ? '⚠️' : window.currentSemesterGpa[gpaCumulativeCheckbox.checked ? 0 : 1];
+      cumulativeCreditsValue.textContent = badGpaFlag ? '' : window.currentCredits[gpaCumulativeCheckbox.checked ? 0 : 1] + ' Credits';
       gpaCalculatorEditConfig.textContent = badGpaFlag ? 'Edit GPA Config ⚠️' : 'Edit GPA Config';
       gpaCumulativeError.textContent = window.gpaErrorMessage;
       gpaSemesterValue.textContent = selectedSemesterData[1] === -1 ? '⚠️' : (Math.floor(1e3 * selectedSemesterData[1] / selectedSemesterData[2]) / 1e3).toFixed(3);
+      semesterCreditsValue.textContent = selectedSemesterData[1] === -1 ? '' : selectedSemesterData[2] + ' Credits'
       gpaSemesterError.textContent = selectedSemesterData[1] === -1 ? `${window.gpaErrorMessage.startsWith('Grade') ? 'Grade' : 'Credit count'} is unknown for some "${selectedSemesterData[0]}" courses` : '';
       // If there are grades that are missing from the gpa mapping, then check the following conditions:
       // If the selected semester is the current term OR if the cumulative GPA is including the current term, then reveal the missing grades in an error message (override any other existing error message)
@@ -1384,8 +1434,10 @@ if (document.title === 'Dashboard') {
       }
     }
     await calculateGpa(true);
-    // Show the gpa card after it has been fully configured
-    gpaCard.style.display = '';
+    // Show the gpa card after it has been fully configured (only if show mode is enabled)
+    if (config.gpa_card?.show_card === true) {
+      gpaCard.style.display = '';
+    }    
   });
 } else if (/courses\/\d+\/grades/.test(window.location.href)) { // Course grades page
   // Check if the page is valid (if the page is an actual courses' grade page)
@@ -2796,7 +2848,7 @@ if (document.title === 'Dashboard') {
             // Do not skip the current assignment if it is the "min grade" assignment
             const missingFlag = assignment.submission.missing;
             const ungradedFlag = assignment.submission.score === null|| assignment.submission.workflow_state !== 'graded';
-            if (window.minGradeAssignment !== assignment.id && (assignment.omit_from_final_grade || (gradedAssignmentsOnly && ((missingFlag || ungradedFlag) && whatIfScores !== 'DOM' && whatIfScores?.[assignment.id] === undefined)))) {
+            if (window.minGradeAssignment !== assignment.id && (assignment.omit_from_final_grade || (gradedAssignmentsOnly && ((missingFlag || ungradedFlag) && window.previousGradeConfig !== 'DOM' && window.previousGradeConfig?.[assignment.id] === undefined)))) {
               continue;
             }
             // Check if the current assignment is the current assignment for the "min grade" operation
@@ -2811,6 +2863,9 @@ if (document.title === 'Dashboard') {
               continue;
             }
             const score = window.previousGradeConfig === 'DOM' ? getWhatIfGrade(assignment) : window.previousGradeConfig?.[assignment.id] ?? assignment.submission.score ?? 0;
+            if (score === null || score === undefined) {
+              continue;
+            }
             map[group.name].grades.push({
               id: assignment.id,
               score,
@@ -2918,6 +2973,8 @@ if (document.title === 'Dashboard') {
           }
           // Scale the weighting for the "min grade" group
           minGradeArr[4] *= k;
+          // Scale the class score using the total considered weighting
+          classScore *= k;
           // Find the maximum grade (percentage) that you can get without including the "min grade" group
           const maxGrade = 100 - minGradeArr[4];
           // Throw an error if unexpected behavior arises
@@ -3194,7 +3251,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores, getC
         // Don't consider missing/ungraded assignments if the gradedAssignmentsOnly checkbox is ticked or if there isn't a what-if score
         // Assignment is missing if assignment.submission.missing is true; Assignment is ungraded if assignment.submission.score is null or if assignment.submission.workflow_state is not "graded"
         const missingFlag = assignment.submission.missing;
-        const ungradedFlag = assignment.submission.score === null|| assignment.submission.workflow_state !== 'graded';
+        const ungradedFlag = assignment.submission.score === null || assignment.submission.workflow_state !== 'graded';
         if (assignment.omit_from_final_grade || (gradedAssignmentsOnly && ((missingFlag || ungradedFlag) && whatIfScores !== 'DOM' && whatIfScores?.[assignment.id] === undefined))) {
           continue;
         }

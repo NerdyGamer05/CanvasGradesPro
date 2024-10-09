@@ -198,6 +198,10 @@ span.link {
     font-style: italic;
 }
 
+#gpa_card_position_container {
+    margin-top: .35rem;
+}
+
 /* TOGGLE SWITCH */
 
 .switch {
