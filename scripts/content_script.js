@@ -1042,11 +1042,14 @@ if (document.title === 'Dashboard') {
             return;
           }
           const courseID = RegExp(/row-(\d+)/g).exec(dropdown.parentElement.classList.toString())[1];
-          const storageOption = dropdown.querySelector(`option[class="${config.gpa[courseID].letter_grade}"]`);
+          const storageOption = dropdown.querySelector(`option[class="${config.gpa?.[courseID].letter_grade}"]`);
           if (storageOption !== null) {
             storageOption.selected = true;
             return;
           }
+          // Make sure to initialize the nested config.gpa object if it is not defined (using nullish coalescing assignment aka ??=)
+          config.gpa ??= {};
+          config.gpa[courseID] ??= {};
           config.gpa[courseID].letter_grade = '';
           dropdown.querySelector(`option[class="blank"]`).selected = true;
         });
@@ -1134,6 +1137,10 @@ if (document.title === 'Dashboard') {
       minGpaRequired.textContent = Number(minGpa.toFixed(3)) + (gpaStandard[maxLetterGrade] < minGpa ? ' 😭' : (minGpa === 0 ? ' 🗿' : ''));
       // If the user cannot get their desired gpa or if they don't have to do anything to get it, then exit early
       if (gpaStandard[maxLetterGrade] < minGpa || minGpa === 0) {
+        const oldTable = document.getElementById('min-gpa-table');
+        if (oldTable !== null) {
+          oldTable.parentElement.replaceChildren();
+        }
         return;
       }
       // If the current term credits includes an invalid credit, then throw an error since this point should not have been reached
@@ -1195,11 +1202,17 @@ if (document.title === 'Dashboard') {
       }
       // If there is an old table, then replace it with the new table
       const oldTable = minGpaContent.querySelector('table');
+      const tableDesc = document.createElement('h5');
+      tableDesc.textContent = 'Grade Combinations for Achieving Minimum GPA';
       if (oldTable !== null) {
-        oldTable.replaceWith(minGpaTable);
+        oldTable.parentElement.replaceChildren();
+        oldTable.parentElement.appendChild(tableDesc);
+        oldTable.parentElement.appendChild(minGpaTable);
+        // oldTable.replaceWith(minGpaTable);
       } else {
         const minGpaTableContainer = document.createElement('div');
         minGpaTableContainer.id = 'min-gpa-table-container';
+        minGpaTableContainer.appendChild(tableDesc);
         minGpaTableContainer.appendChild(minGpaTable);
         minGpaContent.appendChild(minGpaTableContainer);
       }
@@ -1342,13 +1355,13 @@ if (document.title === 'Dashboard') {
         const courseConfig = config[course.id] ?? {};
         const classGradingStandard = course.grading_standard_id !== null ? (await retrieveGradingStandard(course.id, course.grading_standard_id)) : null;
         if (course.term?.id === currentSemesterId) {
-          window.currentTermCredits.push(Number(config.gpa[course.id]?.credits ?? -1));
+          window.currentTermCredits.push(Number(config.gpa?.[course.id]?.credits ?? -1));
         }
         // Store flag for detecting if the current course is using "AUTO" and is a current term course
         let autoFlag = false;
         // Use a IIFE to compute the letter grade for a given course if the grade is in computed grades "cache" or in chrome storage
         const letterGrade = (function() {
-          const tmp = config.gpa[course.id]?.letter_grade ?? '';
+          const tmp = config.gpa?.[course.id]?.letter_grade ?? '';
           if ((tmp === 'AUTO' || tmp === '') && course.term?.id === currentSemesterId) {
             autoFlag = true;
             return null;
@@ -1370,9 +1383,12 @@ if (document.title === 'Dashboard') {
           return tmpLetterGrade === null ? maxLetterGrade : (tmpLetterGrade === 'N/A' ? null : tmpLetterGrade);
         })() ?? '';
         const courseGpa = gpaStandard[letterGrade] ?? null;
-        const credits = config.gpa[course.id]?.credits ?? null;
+        const credits = config.gpa?.[course.id]?.credits ?? null;
         // On the initial case (for page load, replace any blank grades and any invalid "AUTO" grades with the manually calculated grade)
         if (initialCall && !autoFlag) {
+          // Make sure to initialize the nested config.gpa object if it is not defined (using nullish coalescing assignment aka ??=)
+          config.gpa ??= {};
+          config.gpa[course.id] ??= {};
           config.gpa[course.id].letter_grade = letterGrade ?? '';
         } 
         if (Number(credits) !== 0 && courseGpa === null && autoFlag) {
@@ -1388,7 +1404,7 @@ if (document.title === 'Dashboard') {
         }
         document.querySelector(`.row-${course.id} option[class="${autoFlag ? 'AUTO' : (courseGpa === null ? 'blank' : letterGrade)}"]`).selected = true;
         // If the course is an valid course with credits that haven't been set, then mark the semester for the course as invalid and set the error message
-        if (course.term !== undefined && credits === null) {
+        if (course.term !== undefined && credits === null && window.semesters[course.term.id] !== undefined) {
           window.gpaErrorMessage = 'Credit count is unknown for some courses';
           window.semesters[course.term.id][1] = -1;
           continue;
@@ -1435,7 +1451,7 @@ if (document.title === 'Dashboard') {
     }
     await calculateGpa(true);
     // Show the gpa card after it has been fully configured (only if show mode is enabled)
-    if (config.gpa_card?.show_card === true) {
+    if (config.gpa_card?.show_card !== false) {
       gpaCard.style.display = '';
     }    
   });
