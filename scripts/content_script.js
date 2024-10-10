@@ -1201,14 +1201,13 @@ if (document.title === 'Dashboard') {
         minGpaTable.appendChild(row);
       }
       // If there is an old table, then replace it with the new table
-      const oldTable = minGpaContent.querySelector('table');
+      const oldTableContainer = minGpaContent.querySelector('#min-gpa-table-container');
       const tableDesc = document.createElement('h5');
       tableDesc.textContent = 'Grade Combinations for Achieving Minimum GPA';
-      if (oldTable !== null) {
-        oldTable.parentElement.replaceChildren();
-        oldTable.parentElement.appendChild(tableDesc);
-        oldTable.parentElement.appendChild(minGpaTable);
-        // oldTable.replaceWith(minGpaTable);
+      if (oldTableContainer !== null) {
+        oldTableContainer.replaceChildren();
+        oldTableContainer.appendChild(tableDesc);
+        oldTableContainer.appendChild(minGpaTable);
       } else {
         const minGpaTableContainer = document.createElement('div');
         minGpaTableContainer.id = 'min-gpa-table-container';
