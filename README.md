@@ -18,6 +18,7 @@
     - Stores grade to GPA mapping
     - Allows you to find minimum GPA for current term to get a X cumulative GPA
 - Adds grades to the dashboard cards
+- Bypass instructor hiding course grades
 - Allows user to add/disable weighting for assignment groups
 - Allows users to configure drop rules for assignment groups
 - Allows users to set custom grading standard/scale
