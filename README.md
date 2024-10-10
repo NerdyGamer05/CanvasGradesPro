@@ -28,11 +28,15 @@
 - Calculator for finding the minimum grade required on an assignment so that you're grade is a X% or a specified letter grade
 - Custom font support for the grade overlays via Google Fonts
 
-### GPA Card
-<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture.png" width="500" alt="GPA Card" valign="middle" align="middle">
 
 ### Grade Overlays
-<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture2.png" width="500" alt="GPA Card" valign="middle" align="middle">
+<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture2.png" alt="Grade Overlays" valign="middle" align="middle">
+
+### GPA Card
+<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture.png" alt="GPA Card" valign="middle" align="middle">
+
+### Popup Menu (for settings configuration)
+<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture3.png" alt="Popup Menu" valign="middle" align="middle">
 
 ## Next Steps 
 
@@ -43,7 +47,7 @@ If you have any feature suggestions or improvements that can be made to the exte
 
 ## Issues
 
-If you are facing any issues with the extension, please [create an issue](https://github.com/NerdyGamer05/CanvasGradesPro/issues/new)
+If you are facing any issues with the extension, please [create an issue](https://github.com/NerdyGamer05/CanvasGradesPro/issues/new).
 
 <hr>
 
