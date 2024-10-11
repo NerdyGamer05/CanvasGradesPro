@@ -40,6 +40,13 @@
 
 ## Next Steps 
 
+### Know Bugs / Issues + Things I'm Working On:
+- Issues
+  - Bad performance for initial GPA card calculations (really slow)
+  - Assignment group weighting not scaling up/down to 100%
+- Working On:
+  - Nothing yet 😪
+
 I'm constantly looking to enhance this extension and would love your input! If you have suggestions for new features, please take a moment to fill out this [Google Form](https://docs.google.com/forms/d/e/1FAIpQLSdjEcsXiOFBt0HN6t7ra3wvjiaJJREMW35u_u3CsmOzR3aaKA/viewform) and vote on the features you'd like to see in the future. 
 Your feedback is invaluable in making this extension even better!
 <br><br>
