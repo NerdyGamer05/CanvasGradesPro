@@ -7,7 +7,7 @@
 [link-chrome]: https://chromewebstore.google.com/detail/canvasgradespro/llckodagdcbdenhnjkhkpeeeajodfldc 'Version published on Chrome Web Store'
 [link-firefox]: https://addons.mozilla.org/en-US/firefox/addon/canvasgradespro/ 'Version published on Mozilla Add-ons'
 
-[<img src="https://raw.githubusercontent.com/alrra/browser-logos/90fdf03c/src/chrome/chrome.svg" width="48" alt="Chrome" valign="middle">][link-chrome] [<img valign="middle" src="https://img.shields.io/chrome-web-store/v/llckodagdcbdenhnjkhkpeeeajodfldc.svg?label=%20">][link-chrome] and other Chromium browsers
+[<img src="https://raw.githubusercontent.com/alrra/browser-logos/90fdf03c/src/chrome/chrome.svg" width="48" alt="Chrome" valign="middle">][link-chrome] [<img valign="middle" src="https://img.shields.io/chrome-web-store/v/llckodagdcbdenhnjkhkpeeeajodfldc.svg?label=%20">][link-chrome] and other Chromium browsers (v1.0.3 still in review)
 
 [<img src="https://raw.githubusercontent.com/alrra/browser-logos/90fdf03c/src/firefox/firefox.svg" width="48" alt="Firefox" valign="middle">][link-firefox] [<img valign="middle" src="https://img.shields.io/amo/v/canvasgradespro.svg?label=%20">][link-firefox]
 
