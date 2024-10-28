@@ -30,13 +30,13 @@
 
 
 ### Grade Overlays
-<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture2.png" alt="Grade Overlays" valign="middle" align="middle">
+<img src="https://i.ibb.co/1vB5hXb/extension-Store-Picture2.png" alt="Grade Overlays" valign="middle" align="middle">
 
 ### GPA Card
-<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture.png" alt="GPA Card" valign="middle" align="middle">
+<img src="https://i.ibb.co/FBCYdXc/extension-Store-Picture.png" alt="GPA Card" valign="middle" align="middle">
 
 ### Popup Menu (for settings configuration)
-<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture3.png" alt="Popup Menu" valign="middle" align="middle">
+<img src="https://i.ibb.co/V9dDgSt/extension-Store-Picture3.png" alt="Popup Menu" valign="middle" align="middle">
 
 ## Next Steps 
 
