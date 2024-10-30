@@ -28,11 +28,15 @@
 - Calculator for finding the minimum grade required on an assignment so that you're grade is a X% or a specified letter grade
 - Custom font support for the grade overlays via Google Fonts
 
-### GPA Card
-<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture.png" width="500" alt="GPA Card" valign="middle" align="middle">
 
 ### Grade Overlays
-<img src="https://chrome-extension-pictures.s3.us-east-2.amazonaws.com/extensionStorePicture2.png" width="500" alt="GPA Card" valign="middle" align="middle">
+<img src="https://i.ibb.co/1vB5hXb/extension-Store-Picture2.png" alt="Grade Overlays" valign="middle" align="middle">
+
+### GPA Card
+<img src="https://i.ibb.co/FBCYdXc/extension-Store-Picture.png" alt="GPA Card" valign="middle" align="middle">
+
+### Popup Menu (for settings configuration)
+<img src="https://i.ibb.co/V9dDgSt/extension-Store-Picture3.png" alt="Popup Menu" valign="middle" align="middle">
 
 ## Next Steps 
 
@@ -41,12 +45,14 @@ Your feedback is invaluable in making this extension even better!
 <br><br>
 If you have any feature suggestions or improvements that can be made to the extension, please [create an issue](https://github.com/NerdyGamer05/CanvasGradesPro/issues/new) so that I can hear your idea.
 
-## Issues
+### Known Bugs / Issues + Things I'm Working On:
+- Issues
+  - Bad performance for initial GPA card calculations (really slow)
+  - Assignment group weighting not scaling up/down to 100%
+- Working On:
+  - Nothing yet 😪
 
-If you are facing any issues with the extension, please [create an issue](https://github.com/NerdyGamer05/CanvasGradesPro/issues/new)
+## Final Notes
 
-<hr>
-
-### Final Notes
-
-If you are enjoying your experience CanvasGradesPro, consider ⭐ **leaving a review**  and/or **starring this repository** ⭐
+If you are facing any issues with the extension, please [create an issue](https://github.com/NerdyGamer05/CanvasGradesPro/issues/new).<br><br>
+If you are enjoying your experience with CanvasGradesPro, consider ⭐ **leaving a review**  and/or **starring this repository** ⭐
