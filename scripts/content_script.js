@@ -817,7 +817,6 @@ if (document.title === 'Dashboard') {
         const gridItem = document.createElement('div');
         const name = col.replace(/\s/g, '-').toLowerCase();
         gridItem.classList.add('grid-item', `row-${course.id}`, name);
-        gridItem.dataset.semester_id = course.term.id;
         if (name === 'course-name') {
           gridItem.textContent = course.course_code;
         } else if (name === 'term') {
@@ -825,6 +824,7 @@ if (document.title === 'Dashboard') {
           if (course.term === undefined || badTermNames.includes(course.term.name)) {
             gridItem.textContent = '\u200b';
           } else {
+            gridItem.dataset.semester_id = course.term.id;
             gridItem.textContent = course.term.name;
             if (currentSemesterId < course.term.id) {
               currentSemesterId = course.term.id;
@@ -1390,12 +1390,12 @@ if (document.title === 'Dashboard') {
           config.gpa[course.id] ??= {};
           config.gpa[course.id].letter_grade = letterGrade ?? '';
         } 
-        if (Number(credits) !== 0 && courseGpa === null && autoFlag) {
+        if (course.term !== undefined && Number(credits) !== 0 && courseGpa === null && autoFlag) {
           // Add missing grades to the set (used for informing the user of missing letter grades)
           window.gpaBadCourses.add(letterGrade);
           window.semesters[course.term.id][1] = -1;
         }
-        if (Number(credits) !== 0 && (letterGrade === '' || courseGpa === null)) {
+        if (course.term !== undefined && Number(credits) !== 0 && (letterGrade === '' || courseGpa === null)) {
           window.gpaErrorMessage = 'Grade is unknown for some courses';
           // If the course is a valid course, then mark the semester for the course as invalid for grades
           window.semesters[course.term.id][1] = -1;
@@ -3524,6 +3524,8 @@ const getLetterGrade = async function(gradingStandard, grade) {
   }
   // Default grading scheme (sorted in descending order) [sorting is automatic?]
   const weights = Object.keys(gradingStandard).map(Number);
+  // Sort the weights in ascending order
+  weights.sort((a,b) => a-b);
   // Binary search on the weights
   let left = 0, right = weights.length - 1;
   while (left <= right) {
