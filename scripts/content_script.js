@@ -343,7 +343,7 @@ if (document.title === 'Dashboard') {
         const grade = (await getCourseGrade(courses[index], classConfig, null, null, false))[0];
         // Use the default grading standard if the current class has no grading standard
         if (isObjectEmpty(classConfig.grading_standard)) {
-          classConfig.grading_standard = course.grading_standard_id !== null ? ((await retrieveGradingStandard(course.id, course.grading_standard_id)) ?? config.default_grading_standard ?? default_grading_standard) : config.default_grading_standard ?? default_grading_standard;
+          classConfig.grading_standard = course.grading_standard_id !== null && course.grading_standard_id !== undefined ? ((await retrieveGradingStandard(course.id, course.grading_standard_id)) ?? config.default_grading_standard ?? default_grading_standard) : config.default_grading_standard ?? default_grading_standard;
         }
         // Get the letter grade for the current course
         const letterGrade = await getLetterGrade(classConfig.grading_standard, grade);
@@ -747,6 +747,8 @@ if (document.title === 'Dashboard') {
       }
       coursesPage++;
     }
+    const tmp = allCourses.find(course => course.id === 1368212);
+    tmp.grading_standard_id = undefined;
     let gpaStandard = config.default_gpa_standard ?? default_gpa_standard;
     // Consider the user preference for adding the gpa card to the beginning or end of the dashboard card container
     if ((config.gpa_card?.position ?? 'first') === 'first') {
@@ -1352,7 +1354,7 @@ if (document.title === 'Dashboard') {
           window.semesters[course.term.id] = [course.term.name, 0, 0];
         }
         const courseConfig = config[course.id] ?? {};
-        const classGradingStandard = course.grading_standard_id !== null ? (await retrieveGradingStandard(course.id, course.grading_standard_id)) : null;
+        const classGradingStandard = course.grading_standard_id !== null && course.grading_standard_id !== undefined ? (await retrieveGradingStandard(course.id, course.grading_standard_id)) : null;
         if (course.term?.id === currentSemesterId) {
           window.currentTermCredits.push(Number(config.gpa?.[course.id]?.credits ?? -1));
         }
@@ -1494,7 +1496,7 @@ if (document.title === 'Dashboard') {
     const courseAssignments = await (await fetch(`/api/v1/courses/${courseID}/assignment_groups?include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission`, {
       method: 'GET'
     })).json();
-    if (course.grading_standard_id !== null) {
+    if (course.grading_standard_id !== null && course.grading_standard_id !== undefined) {
       classGradingStandard = await retrieveGradingStandard(course.id, course.grading_standard_id);
     }
 
