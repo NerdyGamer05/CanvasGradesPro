@@ -747,8 +747,6 @@ if (document.title === 'Dashboard') {
       }
       coursesPage++;
     }
-    const tmp = allCourses.find(course => course.id === 1368212);
-    tmp.grading_standard_id = undefined;
     let gpaStandard = config.default_gpa_standard ?? default_gpa_standard;
     // Consider the user preference for adding the gpa card to the beginning or end of the dashboard card container
     if ((config.gpa_card?.position ?? 'first') === 'first') {
@@ -3212,7 +3210,7 @@ const calculatePercentile = function(q1, q2, q3, grade, low, high) {
  * getCourseStats: boolean (determining whether or not the course statistic grades will be calculated)
  */
 const getCourseGrade = async function(course, config, groups, whatIfScores, getCourseStatistics) {
-  if (course.workflow_state === 'unpublished') {
+  if (course.workflow_state === 'unpublished' || course.workflow_state === 'completed') {
     return ['NG'].concat(new Array(6).fill(-1));
   }
   // If the assignment groups have not been provided, then fetch them and update the groups variable
