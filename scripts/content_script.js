@@ -743,7 +743,7 @@ if (document.title === 'Dashboard') {
         break;
       }
       for (const course of courses) {
-        if (courses.access_restricted_by_date === true) {
+        if (course.access_restricted_by_date === true) {
           continue;
         }
         allCourses.push(course);
