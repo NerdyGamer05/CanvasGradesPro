@@ -1249,8 +1249,8 @@ if (document.title === 'Dashboard') {
         dropdown.parentElement.textContent = dropdown.options[dropdown.selectedIndex].textContent;
         gpaSemesterEditIcon.classList.replace('fa-save', 'fa-edit');
         const selectedSemesterData = window.semesters[window.semesterDropdownValue];
-        gpaSemesterValue.textContent = selectedSemesterData[1] === -1 ? '⚠️' : (Math.floor(1e3 * selectedSemesterData[1] / selectedSemesterData[2]) / 1e3).toFixed(3);
-        semesterCreditsValue.textContent = selectedSemesterData[1] === -1 ? '' : selectedSemesterData[2] + ' Credits'
+        gpaSemesterValue.textContent = selectedSemesterData[1] === -1 ? '⚠️' : (selectedSemesterData[2] === 0 ? 'N/A' : (Math.floor(1e3 * selectedSemesterData[1] / selectedSemesterData[2]) / 1e3).toFixed(3));
+        semesterCreditsValue.textContent = selectedSemesterData[1] === -1 ? '' : selectedSemesterData[2] + ' Credits';
         gpaSemesterError.textContent = selectedSemesterData[1] === -1 ? `Credit count is unknown for some ${selectedSemesterData[0]} courses` : '';
       } else { // Editing mode
         const dropdown = semestersDropdown.cloneNode(true);
@@ -1363,6 +1363,10 @@ if (document.title === 'Dashboard') {
         let autoFlag = false;
         // Use a IIFE to compute the letter grade for a given course if the grade is in computed grades "cache" or in chrome storage
         const letterGrade = (function() {
+          // Implementation may be subjectively desired -- if a new term is introduced before the current term ends (e.g. from registering for your courses for the next term)
+          // then the "old" current term should still have grades calculated via the dashboard grade, which should be used for the gpa calculation.
+          // However, doing so would cause valid grades to be overriden from your history when the semester ends, so I will not being doing this for now
+          // TODO I believe that there is an alternative way to fix this, so I will do this in the future
           const tmp = config.gpa?.[course.id]?.letter_grade ?? '';
           if ((tmp === 'AUTO' || tmp === '') && course.term?.id === currentSemesterId) {
             autoFlag = true;
@@ -1432,8 +1436,8 @@ if (document.title === 'Dashboard') {
       cumulativeCreditsValue.textContent = badGpaFlag ? '' : window.currentCredits[gpaCumulativeCheckbox.checked ? 0 : 1] + ' Credits';
       gpaCalculatorEditConfig.textContent = badGpaFlag ? 'Edit GPA Config ⚠️' : 'Edit GPA Config';
       gpaCumulativeError.textContent = window.gpaErrorMessage;
-      gpaSemesterValue.textContent = selectedSemesterData[1] === -1 ? '⚠️' : (Math.floor(1e3 * selectedSemesterData[1] / selectedSemesterData[2]) / 1e3).toFixed(3);
-      semesterCreditsValue.textContent = selectedSemesterData[1] === -1 ? '' : selectedSemesterData[2] + ' Credits'
+      gpaSemesterValue.textContent = selectedSemesterData[1] === -1 ? '⚠️' : (selectedSemesterData[2] === 0 ? 'N/A' : (Math.floor(1e3 * selectedSemesterData[1] / selectedSemesterData[2]) / 1e3).toFixed(3));
+      semesterCreditsValue.textContent = selectedSemesterData[1] === -1 ? '' : selectedSemesterData[2] + ' Credits';
       gpaSemesterError.textContent = selectedSemesterData[1] === -1 ? `${window.gpaErrorMessage.startsWith('Grade') ? 'Grade' : 'Credit count'} is unknown for some "${selectedSemesterData[0]}" courses` : '';
       // If there are grades that are missing from the gpa mapping, then check the following conditions:
       // If the selected semester is the current term OR if the cumulative GPA is including the current term, then reveal the missing grades in an error message (override any other existing error message)
