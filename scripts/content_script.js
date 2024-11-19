@@ -222,15 +222,21 @@ const applyCustomFont = async function(font) {
 
 // Dashboard page
 if (document.title === 'Dashboard') {
+  window.maxActiveSemesterId = -1;
+  window.maxActiveSemesterName = -1;
   fetch('/api/v1/dashboard/dashboard_cards', {
     method: 'GET'
   })
   .then(response => response.json())
   .then(cards => {
     return Promise.all(cards.map(async card => {
-      const course = await (await fetch(`api/v1/courses/${card.id}`, {
+      const course = await (await fetch(`api/v1/courses/${card.id}?include[]=term`, {
         method: 'GET'
       })).json();
+      if (course.term !== undefined && window.maxActiveSemesterId < course.term.id) {
+        window.maxActiveSemesterId = course.term.id;
+        window.maxActiveSemesterName = course.term.name;
+      }
       return {
         id: card.id,
         course_code: card.courseCode,
@@ -239,8 +245,9 @@ if (document.title === 'Dashboard') {
       }
     }));
   })
-  .catch(() => {
+  .catch(err => {
     // Probably not on a Canvas page, so stop the execution of this code
+    console.error('An error has occurred when fetching dashboard cards', err);
     thisFunctionDoesNotExistAndWasCreatedWithTheOnlyPurposeOfStopJavascriptExecutionOfAllTypesIncludingCatchAndAnyArbitraryWeirdScenario();
   })
   .then(async courses => {
@@ -853,6 +860,10 @@ if (document.title === 'Dashboard') {
         gpaGrid.appendChild(gridItem);
       }
     }
+    // Override current semester id (keep old behavior until this is confirmed to be correct)
+    currentSemesterId = window.maxActiveSemesterId;
+    currentSemesterName = window.maxActiveSemesterName;
+    
     gpaGrid.classList.add('grid-container');
     // Set the subtitle for the current semester (tells the user what the "current semester" is)
     gpaCurrentSemesterName.textContent = currentSemesterName === '' ? '' : `Current Term: ${currentSemesterName}`;
@@ -1366,7 +1377,7 @@ if (document.title === 'Dashboard') {
           // Implementation may be subjectively desired -- if a new term is introduced before the current term ends (e.g. from registering for your courses for the next term)
           // then the "old" current term should still have grades calculated via the dashboard grade, which should be used for the gpa calculation.
           // However, doing so would cause valid grades to be overriden from your history when the semester ends, so I will not being doing this for now
-          // TODO I believe that there is an alternative way to fix this, so I will do this in the future
+          // Current approach to this is retrieving the current term using the maximum course term id from the dashboard course cards 
           const tmp = config.gpa?.[course.id]?.letter_grade ?? '';
           if ((tmp === 'AUTO' || tmp === '') && course.term?.id === currentSemesterId) {
             autoFlag = true;
