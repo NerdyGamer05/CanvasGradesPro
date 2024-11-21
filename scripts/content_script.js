@@ -816,9 +816,10 @@ if (document.title === 'Dashboard') {
       }
       return a.course_code === undefined ? 1 : (b.course_code === undefined ? -1 : a.course_code.localeCompare(b.course_code));
     });
-    // Try to get the current semester id (get the maximum semester id)
-    let currentSemesterId = -1;
-    let currentSemesterName = '';
+    // Store the current semester id (get the maximum semester id)
+    const currentSemesterId = window.maxActiveSemesterId;
+    const currentSemesterName = window.maxActiveSemesterName;
+    console.log(currentSemesterId, currentSemesterName);
     for (const course of allCourses) {
       if (course.term !== undefined && !badTermNames.includes(course.term.name) && window.semesters[course.term.id] === undefined) {
         window.semesters[course.term.id] = [course.term.name, 0, 0];
@@ -836,10 +837,6 @@ if (document.title === 'Dashboard') {
           } else {
             gridItem.dataset.semester_id = course.term.id;
             gridItem.textContent = course.term.name;
-            if (currentSemesterId < course.term.id) {
-              currentSemesterId = course.term.id;
-              currentSemesterName = course.term.name;
-            }
           }
         } else if (name === 'credits') {
           const textInput = document.createElement('input');
@@ -860,10 +857,6 @@ if (document.title === 'Dashboard') {
         gpaGrid.appendChild(gridItem);
       }
     }
-    // Override current semester id (keep old behavior until this is confirmed to be correct)
-    currentSemesterId = window.maxActiveSemesterId;
-    currentSemesterName = window.maxActiveSemesterName;
-    
     gpaGrid.classList.add('grid-container');
     // Set the subtitle for the current semester (tells the user what the "current semester" is)
     gpaCurrentSemesterName.textContent = currentSemesterName === '' ? '' : `Current Term: ${currentSemesterName}`;
@@ -876,7 +869,7 @@ if (document.title === 'Dashboard') {
     closeButton.classList.add('close-btn');
     closeButton.innerHTML = '&times';
     popupTitle.textContent = 'GPA Course Config';
-    popupNotes.innerHTML = `Note: For courses that are <span style="text-decoration:underline;">not graded</span> use 0 credits.<br><span style="font-size: 0.7rem;">Use "AUTO" grade to automatically calculate grades. Only for current term courses.</span>`;
+    popupNotes.innerHTML = `Note: For courses that are <span style="text-decoration:underline;">not (currently) graded</span> use 0 credits.<br><span style="font-size: 0.7rem;">Use "AUTO" grade to automatically calculate grades. Only for current term courses.</span>`;
     popupNotes.style.margin = '-5px 0 0';
     popupContainer.classList.add('container-canvas-grades-pro');
     saveChangesButton.id = 'popup-save-changes';
@@ -3562,6 +3555,7 @@ const getLetterGrade = async function(gradingStandard, grade) {
 
 const retrieveGradingStandard = async function(courseID, gradingStandardID) {
   const grading_standard = (await (await fetch(`/api/v1/courses/${courseID}/grading_standards/${gradingStandardID}`)).json()).grading_scheme;
+  // If the grading standard is not there, then return null (this can occur when the teacher has a grading standard, but you cannot view it)
   if (grading_standard === undefined) {
     return null;
   }
