@@ -50,7 +50,7 @@ If you have any feature suggestions or improvements that can be made to the exte
   - Bad performance for initial GPA card calculations (really slow)
   - Assignment group weighting not scaling up/down to 100%
 - Working On:
-  - Nothing yet 😪
+  - Fixing bugs
 
 ## Final Notes
 
