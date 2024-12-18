@@ -50,7 +50,8 @@ If you have any feature suggestions or improvements that can be made to the exte
   - Bad performance for initial GPA card calculations (really slow)
   - Assignment group weighting not scaling up/down to 100%
 - Working On:
-  - Nothing yet 😪
+  - Option to sync (upload and download) settings between devices (must be signed in to your browser; no cross-browser support)
+  - Fixing bugs
 
 ## Final Notes
 
