@@ -382,8 +382,8 @@ if (document.title === 'Dashboard') {
         // TODO Consider removing the letter grade since it is not being used
         window.computedGrades[course.id.toString()] = [grade, letterGrade];
         return grade;
-      } catch (error) {
-        console.error(`Failed to get grade for course ${course.id}:`, error);
+      } catch (err) {
+        console.error(`Failed to get grade for course ${course.id}:`, err);
         return null;
       }
     });
@@ -572,7 +572,8 @@ if (document.title === 'Dashboard') {
       }
         
       #gpa-calculator-info-text {
-        font-size: .55rem;
+        min-width: fit-content;
+        font-size: .5rem;
         text-align: left;
         display: none;
         margin-top: -10px;
@@ -819,7 +820,6 @@ if (document.title === 'Dashboard') {
     // Store the current semester id (get the maximum semester id)
     const currentSemesterId = window.maxActiveSemesterId;
     const currentSemesterName = window.maxActiveSemesterName;
-    console.log(currentSemesterId, currentSemesterName);
     for (const course of allCourses) {
       if (course.term !== undefined && !badTermNames.includes(course.term.name) && window.semesters[course.term.id] === undefined) {
         window.semesters[course.term.id] = [course.term.name, 0, 0];
@@ -1240,6 +1240,9 @@ if (document.title === 'Dashboard') {
       if (config.gpa === undefined) {
         config.gpa = {};
       }
+      if (config.gpa_config === undefined) {
+        config.gpa_config = {};
+      }
       config.gpa_config.include_current_semester = gpaCumulativeCheckbox.checked;
       await saveConfig(config.gpa_config, 'gpa_config');
     });
@@ -1502,9 +1505,19 @@ if (document.title === 'Dashboard') {
     const course = await (await fetch(`/api/v1/courses/${courseID}?include[]=total_scores`, {
       method: 'GET'
     })).json();
-    const courseAssignments = await (await fetch(`/api/v1/courses/${courseID}/assignment_groups?include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission`, {
-      method: 'GET'
-    })).json();
+    const courseAssignments = [];
+    let assignmentsPage = 1;
+    while (true) {
+      const response = await fetch(`/api/v1/courses/${courseID}/assignment_groups?per_page=100&include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission&page=${assignmentsPage}`);
+      const assignments = await response.json();
+      if (assignments.length === 0) {
+        break;
+      }
+      for (const assignment of assignments) {
+        courseAssignments.push(assignment);
+      }
+      assignmentsPage++;
+    }
     if (course.grading_standard_id !== null && course.grading_standard_id !== undefined) {
       classGradingStandard = await retrieveGradingStandard(course.id, course.grading_standard_id);
     }
@@ -2472,13 +2485,6 @@ if (document.title === 'Dashboard') {
         }
       }
     });
-    // Apply the mutation observer to all of the assignment grade cells
-    const assignmentGradeCells = document.getElementById('grades_summary').querySelectorAll('tbody tr:not(.hard_coded) span.grade');
-    for (const assignment of assignmentGradeCells) {
-      observer.observe(assignment, {
-        childList: true
-      });
-    }
     const deleteGradingStandardRow = function(elm) {
       // Iterate up the DOM tree to get the current row of the trash button
       while (elm !== null && elm.tagName !== 'TR') {
@@ -3136,24 +3142,29 @@ if (document.title === 'Dashboard') {
         console.error(`An error has occured when calculating the course grade for ${course.course_code}`, err);
       }
     }
-    // TODO Modify this so that these that buttons are added earlier with the mutation observer
-    const detailsCells = document.getElementById('grades_summary').querySelectorAll('tbody tr:not(.hard_coded) td.details');
-    const ungradedAssignment = detailsCells.length !== 0;
-    for (const cell of detailsCells) {
-      const minScoreButton = document.createElement('button');
-      const minScoreIcon = document.createElement('i');
-      minScoreIcon.classList.add('fas', 'fa-calculator');
-      minScoreButton.style.background = 'none';
-      minScoreButton.style.border = 'none';
-      minScoreButton.style.outline = 'none';
-      minScoreButton.style.fontSize = '1.2em';
-      minScoreButton.style.position = 'absolute';
-      minScoreButton.style.transform = 'translate(-530%, 20%)';
-      minScoreButton.appendChild(minScoreIcon);
-      cell.appendChild(minScoreButton);
-      minScoreButton.addEventListener('click', togglePopup);
+    // Create elements to be cloned into each of the rows retrieved by the selector below
+    const minScoreButton = document.createElement('button');
+    const minScoreIcon = document.createElement('i');
+    minScoreIcon.classList.add('fas', 'fa-calculator');
+    minScoreButton.style.background = 'none';
+    minScoreButton.style.border = 'none';
+    minScoreButton.style.outline = 'none';
+    minScoreButton.style.fontSize = '1.2em';
+    minScoreButton.style.position = 'absolute';
+    minScoreButton.style.transform = 'translate(-530%, 20%)';
+    minScoreButton.appendChild(minScoreIcon);
+    // Apply the mutation observer to all of the assignment grade cells and add min grade buttons
+    const assignmentGradeCells = document.getElementById('grades_summary').querySelectorAll('tbody tr:not(.hard_coded) span.grade');
+    for (const gradeCell of assignmentGradeCells) {
+      const cell = gradeCell.parentElement.parentElement.parentElement.nextElementSibling;
+      const minScoreElm = minScoreButton.cloneNode(true);
+      minScoreElm.addEventListener('click', togglePopup);
+      cell.appendChild(minScoreElm);
+      observer.observe(gradeCell, {
+        childList: true
+      });
     }
-    if (ungradedAssignment) {
+    if (assignmentGradeCells.length !== 0) {
       const detailsHeaderText = document.createElement('p');
       detailsHeaderText.innerHTML = 'Min Score for Desired Grade';
       detailsHeaderText.style.fontSize = '.7em';
@@ -3164,14 +3175,12 @@ if (document.title === 'Dashboard') {
       detailsHeaderText.style.transform = 'translateX(-90%)';
       document.getElementById('grades_summary').querySelector('thead .assignment_score').nextElementSibling.appendChild(detailsHeaderText);
     }
-
     calculateButton.addEventListener('click', calculateMinGrade);
     desiredGradeInput.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
         calculateMinGrade();
       }
     });
-
     // Set the grade display initially (when the course page loads in)
     await updateGradeDisplay(null, window.previousGradeConfig);
   });
@@ -3226,10 +3235,25 @@ const getCourseGrade = async function(course, config, groups, whatIfScores, getC
   }
   // If the assignment groups have not been provided, then fetch them and update the groups variable
   if (groups === null) {
-    groups = await (await fetch(`/api/v1/courses/${course.id}/assignment_groups?include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission`, {
+    groups = [];
+    let assignmentsPage = 1;
+    while (true) {
+      const response = await fetch(`/api/v1/courses/${course.id}/assignment_groups?per_page=100&include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission&page=${assignmentsPage}`);
+      const assignments = await response.json();
+      if (assignments.length === 0) {
+        break;
+      }
+      for (const assignment of assignments) {
+        groups.push(assignment);
+      }
+      assignmentsPage++;
+    }
+  }
+  /*
+      groups = await (await fetch(`/api/v1/courses/${course.id}/assignment_groups?include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission`, {
       method: 'GET'
     })).json();
-  }
+  */
   try {
     // Check if ungraded/missing assignments are included in the grade calculation process
     const gradedAssignmentsOnly = document.getElementById('only_consider_graded_assignments')?.checked ?? true;
