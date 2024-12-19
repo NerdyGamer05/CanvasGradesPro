@@ -745,7 +745,7 @@ if (document.title === 'Dashboard') {
     const allCourses = [];
     let coursesPage = 1;
     while (true) {
-      const response = await fetch(`/api/v1/courses?per_page=100&include[]=term&state[]=unpublished&state[]=available&state[]=completed&page=${coursesPage}`);
+      const response = await fetch(`/api/v1/courses?per_page=100&include[]=term&state[]=unpublished&state[]=available&state[]=completed&state[]=deleted&enrollment_type=student&page=${coursesPage}`);
       const courses = await response.json();
       if (courses.length === 0) {
         break;
@@ -1521,7 +1521,6 @@ if (document.title === 'Dashboard') {
     if (course.grading_standard_id !== null && course.grading_standard_id !== undefined) {
       classGradingStandard = await retrieveGradingStandard(course.id, course.grading_standard_id);
     }
-
     // If there is no weighting rules in config, then use the class default (if there is one)
     // If the class does not use weighting, then leave the value
 
@@ -1550,7 +1549,7 @@ if (document.title === 'Dashboard') {
         tbody_group.scope = 'col';
         tbody_group.textContent = group.name;
         tbody_weight.scope = 'col'; 
-        tbody_weight.textContent = config.weights?.[group.name] !== undefined ? config.weights[group.name] + '%' : '';
+        tbody_weight.textContent = config.weights?.[group.name] !== undefined ? +config.weights[group.name].toFixed(2) + '%' : '';
         // Add table body row to the table body
         tbody_row.appendChild(tbody_group);
         tbody_row.appendChild(tbody_weight);
@@ -1575,13 +1574,38 @@ if (document.title === 'Dashboard') {
       table.style.display = 'none';
     }
     // If the table existed initially and if there are weights available, then use these weights
+    // If the weights are not complete / invalid (e.g. due to extra groups being added), reset to class default and force save
     if (course.apply_assignment_group_weights && !isObjectEmpty(config.weights)) {
       const tableRows = document.querySelectorAll('table.summary:not([id]) tbody tr');
+      // First check for invalid / incomplete weights
+      const originalWeights = {};
+      let validWeights = true;
       tableRows.forEach((row,idx) => {
         if (idx === tableRows.length - 1) {
           return;
         }
-        row.lastElementChild.textContent = config.weights[row.firstElementChild.textContent] + '%';
+        const curr = config.weights[row.firstElementChild.textContent]; 
+        const rowWeight = +row.lastElementChild.textContent.replace('%', '');
+        originalWeights[row.firstElementChild.textContent] = rowWeight;
+        if (curr === undefined || curr === null) {
+          validWeights = false;
+        }
+        if (isNaN(rowWeight)) {
+          console.error(`Row weight is invalid. Excepted number but received ${row.lastElementChild.textContent.replace('%', '')} instead (this shouldn't happen)`);
+        }
+      });
+      if (!validWeights) {
+        config.weights = originalWeights;
+        await saveConfig(config, courseID);
+      }
+      // If the weights are not valid, then reset to class default and override config
+      // Use original weights map to update rows weights
+      // Or else just use the weights from the config
+      tableRows.forEach((row,idx) => {
+        if (idx === tableRows.length - 1) {
+          return;
+        }
+        row.lastElementChild.textContent = !validWeights ? originalWeights[row.firstElementChild.textContent] + '%' : config.weights[row.firstElementChild.textContent] + '%';
       });
     }
     if (config.use_weighting === undefined) {
@@ -1898,7 +1922,7 @@ if (document.title === 'Dashboard') {
         // Create a input for configuring the weight for the current assignment group
         const weightInput = document.createElement('input');
         weightInput.type = 'text';
-        weightInput.placeholder = '0-100';
+        weightInput.placeholder = '≥ 0';
         weightInput.spellcheck = false;
         weightInput.autocomplete = false;
         weightInput.maxLength = 6;
@@ -1997,16 +2021,34 @@ if (document.title === 'Dashboard') {
         weightSum += weight;
         values[input.parentElement.previousElementSibling.textContent] = weight;
       }
-      // Reveal an error message if the weights don't add up to 100
-      if (weightSum !== 100) {
+      // Reveal an error message if the weights don't add up to a value > 0
+      if (weightSum <= 0) {
         weightsErrorMessage.style.display = 'flex';
-        weightsErrorMessage.textContent = "Please make sure that the weights you provided add up to 100";
+        weightsErrorMessage.textContent = "Please make sure that the weights you provided add up to a positive value";
         return;
       }
+      // Compute constant for scaling weights (so that total is 100)
+      const k = 100 / weightSum;
+      let inputIdx = 0;
+      let scaledWeightSum = 0;
       // Configure each of the weighting table cells 
       for (const input of weightInputs) {
         const tableCell = input.parentElement;
+        if (inputIdx === weightInputs.length - 1) {
+          const diff = +((10000 - scaledWeightSum) / 100).toFixed(2);
+          values[tableCell.previousElementSibling.textContent] = diff;
+          tableCell.textContent = diff + '%';
+          scaledWeightSum += 100 * diff;
+          continue;
+        }
+        values[tableCell.previousElementSibling.textContent] = +(k * values[tableCell.previousElementSibling.textContent]).toFixed(2);
         tableCell.textContent = values[tableCell.previousElementSibling.textContent] + '%';
+        scaledWeightSum += 100 * values[tableCell.previousElementSibling.textContent];
+        inputIdx++;
+      }
+      // If the sum is still not 100, something is wrong (this has tested though so it should work -- there may be a tiny amount of error in the scaling process)
+      if (scaledWeightSum !== 10000) {
+        console.error('Scaled sum is not 100. Something went wrong', scaledWeightSum);
       }
       // Hide error message on success
       weightsErrorMessage.style.display = 'none';
@@ -3249,11 +3291,6 @@ const getCourseGrade = async function(course, config, groups, whatIfScores, getC
       assignmentsPage++;
     }
   }
-  /*
-      groups = await (await fetch(`/api/v1/courses/${course.id}/assignment_groups?include[]=assignments&include[]=score_statistics&include[]=overrides&include[]=submission`, {
-      method: 'GET'
-    })).json();
-  */
   try {
     // Check if ungraded/missing assignments are included in the grade calculation process
     const gradedAssignmentsOnly = document.getElementById('only_consider_graded_assignments')?.checked ?? true;
@@ -3261,9 +3298,15 @@ const getCourseGrade = async function(course, config, groups, whatIfScores, getC
     const map = {}; 
     // Store mapping from group id to group name
     const groupMap = {};
+    // Check if config weighting is valid
+    const validWeighting = !isObjectEmpty(config.weights) && (function() {
+      const weightValues = Object.values(config.weights);
+      return weightValues.length === groups.length && weightValues.every(weight => weight !== undefined && weight !== null);
+    })();
     if (config.use_weighting === undefined) {
       // The course will use weighting if the course provides weighting or if the config has weighting
-      config.use_weighting = course.apply_assignment_group_weights || !isObjectEmpty(config.weights);
+      // Weighting will be invalidated if assignment groups are invalidated
+      config.use_weighting = course.apply_assignment_group_weights || validWeighting;
     }
     // Check if the course is unweighted
     const is_course_unweighted = !config.use_weighting;
@@ -3274,7 +3317,7 @@ const getCourseGrade = async function(course, config, groups, whatIfScores, getC
       let statsGroupTotal = 0;
       map[group.name] = {};
       groupMap[group.id] = group.name;
-      map[group.name].weight = is_course_unweighted ? 1 : (!isObjectEmpty(config.weights) ? config.weights[group.name] : group.group_weight);
+      map[group.name].weight = is_course_unweighted ? 1 : (validWeighting ? config.weights[group.name] : group.group_weight);
       map[group.name].grades = new Array();
       if (getCourseStatistics) {
         map[group.name].q1 = {};
