@@ -1981,7 +1981,8 @@ if (document.title === 'Dashboard') {
         editTable.style.display = 'flex';
         resetWeightsContainer.style.display = 'none';
         window.editing = false;
-        config.weights = groupWeights;
+        // Delete weights from config (use config set by course unless user explicitly sets weights)
+        delete config.weights
         config.use_weighting = true;
         await saveConfig(config, courseID);
         await updateGradeDisplay(null, window.previousGradeConfig);
@@ -2057,7 +2058,15 @@ if (document.title === 'Dashboard') {
       editTable.style.display = 'flex';
       resetWeightsContainer.style.display = 'none';
       window.editing = false;
-      config.weights = values;
+      // If no weighting existing before save or if not all weights are the same, then save weighting normally, else drop weighting from config
+      const changesMade = !course.apply_assignment_group_weights || !courseAssignments.every(group => 
+        group.group_weight === values[group.name]
+      );
+      if (changesMade) {
+        config.weights = values;
+      } else {
+        delete config.weights;
+      }
       config.use_weighting = true;
       // Save config and update the grade display
       await saveConfig(config, courseID);
@@ -2176,8 +2185,8 @@ if (document.title === 'Dashboard') {
         window.gradingStandardMode = null;
         // If the grading standard was being viewed before editing, then show the grading standard table  
         gradingStandardTable.style.display = window.gradingStandardViewMode ? 'inline-table' : 'none'; 
-        // Update the config then save
-        config.grading_standard = fallbackGradingStandard;
+        // Remove grading standard then save config (important to remove since other code relies on nullish coalescing, which doesn't propagate on empty objects)
+        delete config.grading_standard;
         await saveConfig(config, courseID);
         // Update letter grade for the grade display (no grade recalculations required - percentages are stored in window.courseGrades as an array [you, q1, q2, q3, mean])
         await updateGradeDisplay(window.courseGrades);
@@ -2238,7 +2247,17 @@ if (document.title === 'Dashboard') {
       if (window.gradingStandardViewMode) {
         toggleGradingStandardTable();
       }
-      config.grading_standard = grading_standard;
+      // If the changes made are the same as the fallback, then drop the grading standard then save the config
+      const fallbackGradingStandard = classGradingStandard ?? globalConfig.default_grading_standard ?? default_grading_standard;
+      const gradingStandardKeys = Object.keys(grading_standard); 
+      const changesMade = gradingStandardKeys.length !== Object.keys(fallbackGradingStandard).length || !gradingStandardKeys.every(key =>
+        grading_standard[key] === fallbackGradingStandard[key]
+      );
+      if (changesMade) {
+        config.grading_standard = grading_standard;
+      } else {
+        delete config.grading_standard;
+      }
       await saveConfig(config, courseID);
       if (setDefaultGradingStandard.checked) {
         // await saveConfig({ default_grading_standard: grading_standard }, null);
@@ -2435,8 +2454,18 @@ if (document.title === 'Dashboard') {
       if (window.dropsViewMode) {
         toggleDropsTable();
       }
-      // Modify config before saving the config to storage and updating the grade display
-      config.drops = dropRules;
+      // Check if the changes result in the rules set by the class. If so, then remove drops config 
+      // This behavior should be implemented since the user will want to stay up-to-date with all course updates and not fall behind due to "useless"/expired config  
+      const changesMade = !courseAssignments.every(group => {
+        const [lowest, highest] = dropRules[group.name];
+        return (group.rules.drop_lowest ?? 0) === lowest && (group.rules.drop_highest ?? 0) === highest; 
+      });
+      // Modify config before saving the config to storage and updating the grade display (remove drops if changes were not made)
+      if (changesMade) {
+        config.drops = dropRules;
+      } else {
+        delete config.drops;
+      }
       await saveConfig(config, courseID);
       await updateGradeDisplay(null, window.previousGradeConfig);
     });
@@ -2642,6 +2671,7 @@ if (document.title === 'Dashboard') {
         if (grade.nodeName === 'DIV') {
           // Right side grade display
           const gradeStatisticsContainer = document.createElement('div');
+          gradeStatisticsContainer.id = 'grade_statistics';
           let marker = 0;
           for (const elm of gradesArr) {
             // Special case for adding the percentile text
@@ -2676,7 +2706,6 @@ if (document.title === 'Dashboard') {
             statGradeTitle.textContent = ` ${gradesList[marker]}: `;
             statGradeTitle.style.fontSize = '85%';
             const statGrade = document.createElement('span');
-            // statGrade.classList.add('grade'); //
             statGrade.style.fontSize = '85%';
             statGrade.textContent = `${elm.grade}% (${elm.letterGrade})`;
             gradeStatisticsContainer.appendChild(statGradeTitle);
@@ -2703,6 +2732,7 @@ if (document.title === 'Dashboard') {
             const statistics = document.getElementById('grade_statistics');
             // Exit early if the percentile or statistics elements do not exist (should not happen)
             if (percentile === null || statistics === null) {
+              console.error('Percentile or statistics do not exist', percentile, statistics);
               return;
             }
             // If the state is being maintained then flip it early (it will be reset later in the function)
@@ -2733,8 +2763,8 @@ if (document.title === 'Dashboard') {
             toggleGradeStatistics.textContent = 'Hide class statistics'; // Assumes that statistics are shown by default
             toggleGradeStatistics.addEventListener('click', () => gradeStatisticsDisplay(true));
             grade.insertAdjacentElement('afterend', toggleGradeStatistics);
-            gradeStatisticsDisplay(false);
           }
+          gradeStatisticsDisplay(false);
         } else if (grade.nodeName === 'TR') {
           // Set table grade display
           const gradeCell = grade.querySelector('span.tooltip span');
