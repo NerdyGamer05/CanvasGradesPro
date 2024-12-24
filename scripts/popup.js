@@ -1,5 +1,10 @@
 const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
 const gradeOverlay = document.getElementById('gradeOverlay');
+const syncSettingsCheckbox = document.getElementById('sync_settings_checkbox');
+const syncSettingsUpload = document.getElementById('sync_settings_upload');
+const syncSettingsDownload = document.getElementById('sync_settings_download');
+const syncNowButton = document.getElementById('syncNow');
+const syncSettingsMessage = document.getElementById('sync_settings_message');
 const customFont = document.getElementById('custom_font');
 const customFontCheckbox = document.getElementById('custom_font_checkbox');
 const setCustomFont = document.getElementById('set_custom_font');
@@ -79,6 +84,7 @@ const validateCustomFont = async function() {
     window.customFont = null;
   }
 }
+const getSize = obj => new Blob([JSON.stringify(obj)]).size;
 
 contactFormButton.addEventListener('click', () => {
   const name = nameInput.value.trim();
@@ -143,10 +149,18 @@ saveChanges.addEventListener('click', async () => {
   globalConfig.class_statistics_default_view = gradesPageShowClassStats.checked;
   globalConfig.grading_standard_default_view = gradesPageShowGradingStandard.checked;
   globalConfig.drops_default_view = gradesPageShowDrops.checked;
+  globalConfig.always_sync = syncSettingsCheckbox.checked;
   try {
     await chrome.storage.local.set(globalConfig);
     await chrome.storage.local.set({ gpa_card: gpaCardConfig });
     await chrome.storage.local.set({ grade_overlay: gradeOverlayConfig });
+    if (globalConfig.always_sync) {
+      delete globalConfig.always_sync;
+      await chrome.storage.sync.set(globalConfig);
+      globalConfig.always_sync = syncSettingsCheckbox.checked;
+      await chrome.storage.sync.set({ gpa_card: gpaCardConfig });
+      await chrome.storage.sync.set({ grade_overlay: gradeOverlayConfig });
+    }
   } catch (err) {
     saveChangesLabel.style.visibility = 'visible';
     saveChangesLabel.style.color = 'red';
@@ -202,6 +216,65 @@ gradesPageShowClassStats.addEventListener('input', clearSaveMessage);
 gradesPageShowDrops.addEventListener('input', clearSaveMessage);
 linksContainer.firstElementChild.addEventListener('click', () => chrome.tabs.create({ url: 'https://github.com/NerdyGamer05/CanvasGradesPro/issues' }));
 linksContainer.lastElementChild.addEventListener('click', () => chrome.tabs.create({ url: 'https://forms.gle/CVf8hfLLBRYCzLhp7' }));
+syncNowButton.addEventListener('click', async () => {
+  if (!syncSettingsDownload.checked && !syncSettingsUpload.checked) {
+    syncSettingsMessage.classList.add('error');
+    syncSettingsMessage.textContent = 'Please select "Upload" or "Download"!';
+    return;
+  }
+  if (syncSettingsDownload.checked) {
+    // Download mode (replace local storage with sync storage)
+    try {
+      const syncStorage = await chrome.storage.sync.get();
+      await chrome.storage.local.set(syncStorage);
+      syncSettingsMessage.classList.remove('error');
+      syncSettingsMessage.textContent = 'Sync download successful! Refresh to see changes';
+    } catch (err) {
+      syncSettingsMessage.classList.add('error');
+      syncSettingsMessage.textContent = 'Sync download failed!';
+      console.error(err);
+    }
+  } else {
+    // Upload mode (replace sync storage with local storage)
+    const localStorage = await chrome.storage.local.get();
+    const validStorage = {};
+    const keysToClear = [];
+    for (const [key, value] of Object.entries(localStorage)) {
+      if (key === 'always_sync') {
+        continue;
+      }
+      const itemSize = getSize({ [key] : value });
+      // If size is greater than 8 KB, then we cannot upload it to sync storage
+      if (itemSize > 8 * 1024) {
+        keysToClear.push(key);
+        continue;
+      }
+      validStorage[key] = value;
+    }
+    // Check the size limitations
+    const totalSize = getSize(validStorage);
+    if (totalSize > 100 * 1024) {
+      syncSettingsMessage.classList.add('error');
+      syncSettingsMessage.textContent = 'Sync upload failed! Size exceeds 100 KB';
+      return;
+    }
+    if (keysToClear.length > 0) {
+      syncSettingsMessage.classList.remove('error');
+      syncSettingsMessage.textContent = `Sync upload successful! Keys that failed to sync: ${keysToClear.join(',')}`;
+    } else {
+      syncSettingsMessage.classList.remove('error');
+      syncSettingsMessage.textContent = 'Sync upload successful!';
+    }
+    try {
+      await chrome.storage.sync.remove(keysToClear);
+      await chrome.storage.sync.set(validStorage);
+    } catch (err) {
+      syncSettingsMessage.classList.add('error');
+      syncSettingsMessage.textContent = 'Sync upload failed!';
+      console.error(err);
+    }
+  }
+});
 document.addEventListener('DOMContentLoaded', async () => {
   const obj = await chrome.storage.local.get();
   const overlayConfig = obj.grade_overlay ?? {};
@@ -241,6 +314,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   gradesPageShowClassStats.checked = globalConfig.class_statistics_default_view = obj.class_statistics_default_view ?? true;
   gradesPageShowGradingStandard.checked = globalConfig.grading_standard_default_view = obj.grading_standard_default_view ?? true;
   gradesPageShowDrops.checked = globalConfig.drops_default_view = obj.drops_default_view ?? true;
+  // Configure sync settings
+  syncSettingsCheckbox.checked = globalConfig.always_sync = obj.always_sync ?? false;
   // Configure the gpa card settings
   showGpaCard.checked = cardConfig.show_card ?? true; // GPA card display checkbox
   gpaCardPosition.value = cardConfig.position ?? 'first'; // GPA card position dropdown (possible values are 'first', 'last')

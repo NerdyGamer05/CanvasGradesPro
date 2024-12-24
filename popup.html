@@ -11,6 +11,22 @@
     <div class="popup">
         <h2>CanvasGradesPro</h2>
         <div class="spacer"></div>
+        <h4>Sync Config</h4>
+        <div class="switch-container" style="margin-left:-5px">
+            <label class="switch">
+                <input id="sync_settings_checkbox" type="checkbox">
+                <span class="slider round"></span>
+            </label>
+        </div>
+        <span style="margin-left:-22px;">Always Sync</span>
+        <div class="sync_container">
+            <input type="radio" id="sync_settings_upload" name="sync">
+            <label class="sync" for="sync_settings_upload">Upload</label>
+            <input type="radio" id="sync_settings_download" name="sync">
+            <label class="sync" for="sync_settings_download">Download</label>
+        </div>
+        <button id="syncNow">Sync Now</button>
+        <p id="sync_settings_message">&nbsp;</p>
         <h4>Grade Overlay Config</h4>
 
         <img id="logo" src="logo.png">

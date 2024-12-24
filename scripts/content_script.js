@@ -10,9 +10,46 @@ const isObjectEmpty = function(obj) {
   return true;
 }
 
+const getSize = obj => new Blob([JSON.stringify(obj)]).size;
+
 // Function for abstracting the config saving process
 const saveConfig = async function(config, key) {
-  await chrome.storage.local.set({ [key] : config });
+  try {
+    // Save to local storage first
+    await chrome.storage.local.set({ [key] : config });
+    const always_sync = (await chrome.storage.local.get('always_sync'))?.always_sync ?? false;
+    // Exit early if we are not using sync storage or if the key is "always_sync" (do not save this key to sync storage)
+    if (!always_sync || key === 'always_sync') {
+      return;
+    }
+    // Attempt to save to sync storage
+    const itemSize = getSize({ [key] : config });
+    if (itemSize > 8 * 1024) {
+      console.error(`Cannot save ${key} to sync storage. Larger than 8 KB`, config);
+      return;
+    }
+    await chrome.storage.sync.set({ [key] : config });
+  } catch (err) {
+    console.error('Save to sync storage failed!', err);
+  }
+}
+
+// Function for retrieving config while accounting for whether sync storage is being used
+const getConfig = async function() {
+  try {
+    const localConfig = await chrome.storage.local.get();
+    const getSync = localConfig?.always_sync ?? false;
+    if (getSync) {
+      const syncConfig = await chrome.storage.sync.get();
+      for (const [key, value] of Object.entries(syncConfig)) {
+        localConfig[key] = value;
+      }
+    }
+    return localConfig;
+  } catch (err) {
+    console.error('Error when fetching config', err);
+    return {};
+  }
 }
 
 // Numbers represent the lower limit for a given letter grade
@@ -316,11 +353,13 @@ if (document.title === 'Dashboard') {
       }
     });
     // Get all config settings from storage
-    const config = await chrome.storage.local.get();
-    // Store the primary color (used for customizing the popup)
+    const config = await getConfig();
+    // Cleanup bad config data
     if (config.undefined !== undefined) {
       await chrome.storage.local.remove(['undefined']);
+      await chrome.storage.sync.remove(['undefined']);
     }
+    // Store the primary color (used for customizing the popup)
     if (config.primary_color === undefined) {
       config.primary_color = getComputedStyle(document.body).getPropertyValue('--dt-color-primary');
       await saveConfig(config.primary_color, 'primary_color');
@@ -1410,7 +1449,6 @@ if (document.title === 'Dashboard') {
         });
         document.querySelectorAll('.container-canvas-grades-pro .grid-container.special > .grid-item > select').forEach(elm => {
           const dropdown = gradeDropdown.cloneNode(true);
-          const initial = elm.options[elm.selectedIndex].textContent || 'blank';
           // Replace AUTO option with NG option (NG -> No Grade)
           const tmp = dropdown.querySelector('option[class="AUTO"]');
           tmp.classList.replace('AUTO', 'NG');
@@ -1928,7 +1966,7 @@ if (document.title === 'Dashboard') {
   document.getElementById('right-side-wrapper').style.zoom = zoomFactor;
   // Extract the course ID from the URL
   const courseID = RegExp(/courses\/(\d+)\/grades/).exec(window.location.href)[1];
-  Promise.resolve(chrome.storage.local.get())
+  Promise.resolve(getConfig())
   .then(data => {
    // Get class-specific config
    const config = data[courseID] ?? {};

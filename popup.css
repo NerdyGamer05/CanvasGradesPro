@@ -112,6 +112,12 @@ label[for="custom_font"] {
     padding: 2px 8px;
 }
 
+#syncNow {
+    font-size: .8em;
+    padding: 1px 4px;
+    margin-left: .25rem;
+}
+
 #saveChangesLabel {
     position: absolute;
     margin-left: 7px;
@@ -200,6 +206,33 @@ span.link {
 
 #gpa_card_position_container {
     margin-top: .35rem;
+}
+
+label.sync {
+    position: relative;
+    top: -.16rem;
+    font-size: .8rem;
+    font-size: .8em;
+    margin-left: -.225rem;
+}
+
+.sync_container {
+    display: inline;
+    position: relative;
+    top: .2rem;
+}
+
+.sync_container > input[type="radio"] {
+    margin-left: 2px;
+}
+
+#sync_settings_message {
+    font-size: .7em;
+    margin: -8px 0 2px;
+}
+
+#sync_settings_message.error {
+    color: red;
 }
 
 /* TOGGLE SWITCH */
