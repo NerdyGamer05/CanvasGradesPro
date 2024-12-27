@@ -48,10 +48,8 @@ If you have any feature suggestions or improvements that can be made to the exte
 ### Known Bugs / Issues + Things I'm Working On:
 - Issues
   - Bad performance for initial GPA card calculations (really slow)
-  - GPA calculator fails to identify deleted Canvas courses (will make feature for adding your own courses soon)
 - Working On:
-  - Option to sync (upload and download) settings between devices (must be signed in to your browser; no cross-browser support)
-  - Fixing bugs
+  - Nothing currently
 
 ## Final Notes
 
